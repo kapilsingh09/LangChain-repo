@@ -1,14 +1,14 @@
 # LangChain Learning Repository
 
-This repository is a personal learning workspace for exploring and practicing LangChain concepts. I am using it to learn different parts of LangChain, experiment with prompts, models, chains, output parsers, and runnable components, and save examples for future reference.
+This repository is a personal learning workspace for exploring and practicing LangChain concepts. It contains examples, experiments, and reference code for various parts of LangChain, including chat models, embeddings, prompt engineering, chains, output parsing, and runnable components.
 
 ## Purpose
 
-This repo is mainly for:
+This repo is intended for:
 - learning LangChain step by step
 - practicing code examples and small projects
-- keeping useful examples for future reference
-- sharing progress while improving my understanding
+- capturing useful patterns for future reference
+- tracking progress while improving understanding of LangChain
 
 ## What is included
 
@@ -24,8 +24,15 @@ The repository contains examples and practice files for:
 
 ## Notes
 
-This is not a production-ready project. It is a beginner-friendly playground where code is added as I learn and improve.
+This is not a production-ready project. It is a learning playground where code is added and revised as concepts are explored.
 
 ## Goal
 
 The main goal is to build a solid understanding of LangChain by writing, testing, and revising code regularly.
+
+## Recommended workflow
+
+1. Start with notebooks or examples that match the concept you want to learn.
+2. Run code locally and inspect how LangChain components interact.
+3. Modify examples to test new ideas and improve understanding.
+4. Keep the repository as a set of practical learning references.
