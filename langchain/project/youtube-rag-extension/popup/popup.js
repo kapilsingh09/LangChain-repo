@@ -92,7 +92,8 @@ async function handleAskQuestion() {
             payload: {
                 youtube_url: currentVideoInfo.url,
                 question: question,
-                session_id: sessionId
+                session_id: sessionId,
+                model: "free"
             }
         });
         

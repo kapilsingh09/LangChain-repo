@@ -3,6 +3,7 @@ YouTube RAG Backend
 FastAPI + YouTube Transcript + HuggingFace + FAISS + Conversational Memory
 """
 
+import os
 import time
 from datetime import datetime, timezone
 from operator import itemgetter
@@ -20,13 +21,13 @@ from langchain_core.runnables import RunnableParallel, RunnableLambda, RunnableW
 from langchain_core.chat_history import InMemoryChatMessageHistory
 
 # Configuration
-HF_API_KEY = ""
+HF_API_KEY = os.getenv("HF_API_KEY")
 START_TIME = time.time()
 
 app = FastAPI(
     title="YouTube RAG API",
     description="RAG-based API for asking questions about YouTube videos",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 app.add_middleware(
@@ -37,13 +38,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store for conversational history.
-# Maps session_id to InMemoryChatMessageHistory.
+# In-memory store for conversational history (session_id:video_id -> chat history).
 # Note: Data is lost on server restart. Use Redis for production.
 chat_store = {}
 
 def get_session_history(session_id: str):
-    """Retrieves or creates the chat history for a given session."""
+    """Retrieves existing chat history or creates a new one."""
     if session_id not in chat_store:
         chat_store[session_id] = InMemoryChatMessageHistory()
     return chat_store[session_id]
@@ -55,9 +55,9 @@ def format_docs(docs):
 class YoutubeSchema(BaseModel):
     """Payload schema for the /ask endpoint."""
     session_id: str = Field(..., description="Unique ID for the current conversation")
-    question: str = Field(..., description="The question to ask about the YouTube video")
-    youtube_url: str = Field(..., description="The YouTube URL of the video")
-    model: str = Field(...,description="The model to use for the RAG API")
+    question: str = Field(..., description="Question about the YouTube video")
+    youtube_url: str = Field(..., description="YouTube video URL")
+    model: str = Field(..., description="LLM provider/model to use")
 
 @app.get("/")
 def root():
@@ -70,110 +70,130 @@ def check_health():
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "uptime_seconds": time.time() - START_TIME
+        "uptime_seconds": time.time() - START_TIME,
     }
+
+def get_model(model_name: str):
+    """Returns the selected LLM and embedding model based on the request."""
+    if model_name == "free":
+        if not HF_API_KEY:
+            raise ValueError("HF_API_KEY is not configured.")
+        
+        llm_endpoint = HuggingFaceEndpoint(
+            repo_id="Qwen/Qwen2.5-7B-Instruct",
+            task="text-generation",
+            max_new_tokens=512,
+            huggingfacehub_api_token=HF_API_KEY,
+        )
+        llm = ChatHuggingFace(llm=llm_endpoint)
+        embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        return llm, embedding
+        
+    elif model_name == "gemini":
+        raise NotImplementedError("Gemini model is not implemented yet.")
+        
+    elif model_name == "grok":
+        raise NotImplementedError("Grok model is not implemented yet.")
+        
+    else:
+        raise ValueError(f"Unsupported model: {model_name}")
 
 @app.post("/ask")
 def ask_youtube_video(payload: YoutubeSchema):
+
     """
     Main conversational RAG endpoint.
     Extracts transcript, chunks text, creates embeddings, retrieves relevant 
     context via FAISS, and queries the LLM using conversation history.
     """
     try:
-        # Extract YouTube Video ID
+        # Validate URL and extract Video ID
         youtube_url = payload.youtube_url
         if "v=" not in youtube_url:
             return {"error": "Invalid YouTube URL"}
+            
         video_id = youtube_url.split("v=")[1].split("&")[0]
 
-        # Unique memory key per session and video
+        # Create unique memory key per session and video
         memory_key = f"{payload.session_id}:{video_id}"
 
-        # Fetch Transcript
+        # Fetch YouTube Transcript
         try:
             transcript = YouTubeTranscriptApi().fetch(video_id)
         except TranscriptsDisabled as e:
             return {
                 "error": "Transcripts are disabled for this video",
                 "details": str(e),
-                "video_id": video_id
+                "video_id": video_id,
             }
 
-        # Handle transcript objects (usually dicts with a 'text' key)
+        # Convert Transcript to text
         formatted_transcript = " ".join(
             snippet["text"] if isinstance(snippet, dict) else getattr(snippet, "text", "")
             for snippet in transcript
         )
 
-        # Split Transcript
+        if not formatted_transcript.strip():
+            return {
+                "error": "Transcript is empty",
+                "video_id": video_id,
+            }
+
+        # Split Transcript into Chunks
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = splitter.create_documents([formatted_transcript])
 
-        model = payload.model
+        # Select LLM + Embedding Model
+        llm, embedding = get_model(payload.model)
 
-
-        if model == "gemini":
-            pass
-        elif model == "grok":
-            pass
-        elif model == "free":
-        # Initialize LLM and Embeddings
-            llm = HuggingFaceEndpoint(
-                repo_id="Qwen/Qwen2.5-7B-Instruct",
-                task="text-generation",
-                max_new_tokens=512,
-                huggingfacehub_api_token=HF_API_KEY
-            )
-            model = ChatHuggingFace(llm=llm)
-            embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-            # Create Vector Store and Retriever
+        # Create FAISS Vector Store and Retriever
         vector_store = FAISS.from_documents(documents=chunks, embedding=embedding)
         retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
 
         # Define Prompt Template
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a helpful YouTube video assistant.
-Answer the user's question using the provided YouTube transcript context and conversation history.
-If the answer cannot be found in the transcript, say that you don't know.
-Use the conversation history to understand references like "it", "they", "that".
+        Answer the user's question using the provided YouTube transcript context and conversation history.
+        If the answer cannot be found in the transcript, say that you don't know.
+        Use the conversation history to understand references such as "it", "they", "that", etc.
 
-Video Context:
-{context}"""),
+        Video Context:
+        {context}"""),
             MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{question}")
         ])
 
-        # Build Retrieval Chain
+        # Build Retrieval and RAG Chain
         parallel_chain = RunnableParallel({
             "context": itemgetter("question") | retriever | RunnableLambda(format_docs),
             "question": itemgetter("question"),
-            "chat_history": itemgetter("chat_history")
+            "chat_history": itemgetter("chat_history"),
         })
 
-        rag_chain = parallel_chain | prompt | model
+        rag_chain = parallel_chain | prompt | llm
 
         # Add Conversational Memory
         conversational_rag_chain = RunnableWithMessageHistory(
             rag_chain,
             get_session_history,
             input_messages_key="question",
-            history_messages_key="chat_history"
+            history_messages_key="chat_history",
         )
 
-        # Invoke the chain
+        # Run the RAG Pipeline
         response = conversational_rag_chain.invoke(
             {"question": payload.question},
-            config={"configurable": {"session_id": memory_key}}
+            config={"configurable": {"session_id": memory_key}},
         )
 
+        # Return Response
         return {
             "answer": response.content,
             "video_id": video_id,
             "session_id": payload.session_id,
             "transcript_length": len(formatted_transcript),
-            "chunks": len(chunks)
+            "chunks": len(chunks),
+            "model": payload.model,
         }
 
     except Exception as e:
@@ -182,5 +202,10 @@ Video Context:
             "error": "Failed to process video",
             "details": str(e),
             "video_id": video_id if "video_id" in locals() else None,
-            "url": payload.youtube_url
+            "url": payload.youtube_url,
         }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app",port=8000,reload=True)
