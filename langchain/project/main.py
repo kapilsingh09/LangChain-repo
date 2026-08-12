@@ -57,6 +57,7 @@ class YoutubeSchema(BaseModel):
     session_id: str = Field(..., description="Unique ID for the current conversation")
     question: str = Field(..., description="The question to ask about the YouTube video")
     youtube_url: str = Field(..., description="The YouTube URL of the video")
+    model: str = Field(...,description="The model to use for the RAG API")
 
 @app.get("/")
 def root():
@@ -109,17 +110,25 @@ def ask_youtube_video(payload: YoutubeSchema):
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = splitter.create_documents([formatted_transcript])
 
-        # Initialize LLM and Embeddings
-        llm = HuggingFaceEndpoint(
-            repo_id="Qwen/Qwen2.5-7B-Instruct",
-            task="text-generation",
-            max_new_tokens=512,
-            huggingfacehub_api_token=HF_API_KEY
-        )
-        model = ChatHuggingFace(llm=llm)
-        embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        model = payload.model
 
-        # Create Vector Store and Retriever
+
+        if model == "gemini":
+            pass
+        elif model == "grok":
+            pass
+        elif model == "free":
+        # Initialize LLM and Embeddings
+            llm = HuggingFaceEndpoint(
+                repo_id="Qwen/Qwen2.5-7B-Instruct",
+                task="text-generation",
+                max_new_tokens=512,
+                huggingfacehub_api_token=HF_API_KEY
+            )
+            model = ChatHuggingFace(llm=llm)
+            embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+            # Create Vector Store and Retriever
         vector_store = FAISS.from_documents(documents=chunks, embedding=embedding)
         retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
 
