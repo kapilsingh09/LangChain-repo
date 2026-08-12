@@ -47,7 +47,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 # CONFIGURATION
 
-HF_API_KEY = ""
+HF_API_KEY=""
 
 START_TIME = time.time()
 
