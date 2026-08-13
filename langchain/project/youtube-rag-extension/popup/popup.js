@@ -3,7 +3,7 @@ function generateSessionId() {
     return 'sess_' + Math.random().toString(36).substring(2, 15);
 }
 
-// Robust storage wrapper to prevent crashes if extension isn't reloaded yet
+// Robust storage wrapper
 const storage = {
     get: (keys, callback) => {
         try {
@@ -15,7 +15,6 @@ const storage = {
             console.warn("chrome.storage.local not available, falling back to localStorage:", e);
         }
         
-        // Fallback to localStorage
         const result = {};
         keys.forEach(key => {
             const val = localStorage.getItem(key);
@@ -37,7 +36,6 @@ const storage = {
             console.warn("chrome.storage.local not available, falling back to localStorage:", e);
         }
         
-        // Fallback to localStorage
         Object.keys(data).forEach(key => {
             localStorage.setItem(key, JSON.stringify(data[key]));
         });
@@ -52,13 +50,18 @@ let currentVideoInfo = null;
 let sessionId = null;
 let chatHistory = [];
 let savedApiKey = '';
+let isBannerVisible = true;
+let isModelPillVisible = true;
 
 // DOM Elements
 const videoTitleEl = document.getElementById('video-title');
+const videoThumbnailEl = document.getElementById('video-thumbnail');
 const chatHistoryEl = document.getElementById('chat-history');
 const questionInput = document.getElementById('question-input');
 const askBtn = document.getElementById('ask-btn');
 const resetBtn = document.getElementById('reset-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const closeSettingsBtn = document.getElementById('close-settings-btn');
 
 const modelSelect = document.getElementById('model-select');
 const apiKeyContainer = document.getElementById('api-key-container');
@@ -66,9 +69,17 @@ const apiKeyInput = document.getElementById('api-key-input');
 const saveSetupBtn = document.getElementById('save-setup-btn');
 
 const setupContainer = document.getElementById('setup-container');
-const activeModelContainer = document.getElementById('active-model-container');
 const activeModelText = document.getElementById('active-model-text');
-const changeModelBtn = document.getElementById('change-model-btn');
+const modelPillContainer = document.getElementById('model-pill-container');
+const modelPill = document.getElementById('model-pill');
+
+// Toggle Elements
+const toggleBannerBtn = document.getElementById('toggle-banner-btn');
+const toggleBannerIcon = document.getElementById('toggle-banner-icon');
+const videoBanner = document.getElementById('video-banner');
+
+const toggleModelBtn = document.getElementById('toggle-model-btn');
+const toggleModelIcon = document.getElementById('toggle-model-icon');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -87,18 +98,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 title: tab.title.replace(/^\(\d+\)\s*/, '').replace(' - YouTube', '')
             };
             
-            videoTitleEl.textContent = `Current Video: ${currentVideoInfo.title}`;
+            videoTitleEl.textContent = currentVideoInfo.title;
             videoTitleEl.title = currentVideoInfo.title;
             
-            const thumbnailEl = document.getElementById('video-thumbnail');
-            if (thumbnailEl) {
-                thumbnailEl.src = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-                thumbnailEl.style.display = 'block';
-            }
+            videoThumbnailEl.src = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+            videoThumbnailEl.style.display = 'block';
+            
             questionInput.disabled = false;
             askBtn.disabled = false;
 
-            // Load state from chrome.storage
             loadState(videoId);
 
         } else {
@@ -113,20 +121,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Load state from storage
 function loadState(videoId) {
-    storage.get(['apiKey', 'selectedModel', 'videoId', 'sessionId', 'chatHistory'], (result) => {
+    storage.get(['apiKey', 'selectedModel', 'videoId', 'sessionId', 'chatHistory', 'isBannerVisible', 'isModelPillVisible'], (result) => {
+        
+        // Restore Toggles
+        if (result.isBannerVisible !== undefined) {
+            isBannerVisible = result.isBannerVisible;
+            updateBannerVisibility();
+        }
+        if (result.isModelPillVisible !== undefined) {
+            isModelPillVisible = result.isModelPillVisible;
+            updateModelPillVisibility();
+        }
+
         // Restore API Key and Model
         if (result.selectedModel) {
             modelSelect.value = result.selectedModel;
+            updateActiveModelText();
         }
         if (result.apiKey) {
             savedApiKey = result.apiKey;
             apiKeyInput.value = savedApiKey;
         }
         
-        // Show active container if we have a complete setup
-        if (result.selectedModel && (result.selectedModel === 'free' || result.apiKey)) {
-            showActiveModelView();
-        } else {
+        // Show/Hide API key input based on model
+        updateSettingsUI();
+
+        // Check if settings are missing (if gemini/grok selected but no key)
+        if (result.selectedModel !== 'free' && !result.apiKey) {
             showSetupView();
         }
 
@@ -145,30 +166,78 @@ function loadState(videoId) {
     });
 }
 
-function showSetupView() {
-    setupContainer.style.display = 'flex';
-    activeModelContainer.style.display = 'none';
-    
-    // Toggle API input based on selected model
-    if (modelSelect.value === 'free') {
-        apiKeyContainer.style.display = 'none';
-    } else {
-        apiKeyContainer.style.display = 'flex';
-    }
-}
-
-function showActiveModelView() {
-    setupContainer.style.display = 'none';
-    activeModelContainer.style.display = 'flex';
-    
+function updateActiveModelText() {
     let modelName = "Free Model";
     if (modelSelect.value === 'gemini') modelName = "Gemini";
     if (modelSelect.value === 'grok') modelName = "Grok";
-    activeModelText.textContent = `Active: ${modelName}`;
+    activeModelText.textContent = modelName;
 }
 
+function updateSettingsUI() {
+    if (modelSelect.value === 'free') {
+        apiKeyContainer.classList.add('hidden');
+    } else {
+        apiKeyContainer.classList.remove('hidden');
+    }
+}
 
-// Event Listeners
+function showSetupView() {
+    setupContainer.classList.remove('hidden');
+    setupContainer.classList.add('flex');
+}
+
+function hideSetupView() {
+    setupContainer.classList.add('hidden');
+    setupContainer.classList.remove('flex');
+}
+
+// --- Toggle Logic ---
+
+function updateBannerVisibility() {
+    if (isBannerVisible) {
+        videoBanner.classList.remove('hidden-banner');
+        toggleBannerIcon.classList.remove('fa-chevron-down');
+        toggleBannerIcon.classList.add('fa-chevron-up');
+    } else {
+        videoBanner.classList.add('hidden-banner');
+        toggleBannerIcon.classList.remove('fa-chevron-up');
+        toggleBannerIcon.classList.add('fa-chevron-down');
+    }
+}
+
+toggleBannerBtn.addEventListener('click', () => {
+    isBannerVisible = !isBannerVisible;
+    storage.set({ isBannerVisible });
+    updateBannerVisibility();
+});
+
+function updateModelPillVisibility() {
+    if (isModelPillVisible) {
+        modelPill.classList.remove('opacity-0', 'scale-90', 'absolute');
+        modelPill.classList.add('opacity-100', 'scale-100');
+        setTimeout(() => { if (isModelPillVisible) modelPill.style.visibility = 'visible'; }, 300);
+        toggleModelIcon.classList.remove('fa-eye');
+        toggleModelIcon.classList.add('fa-eye-slash');
+    } else {
+        modelPill.classList.remove('opacity-100', 'scale-100');
+        modelPill.classList.add('opacity-0', 'scale-90', 'absolute');
+        setTimeout(() => { if (!isModelPillVisible) modelPill.style.visibility = 'hidden'; }, 300);
+        toggleModelIcon.classList.remove('fa-eye-slash');
+        toggleModelIcon.classList.add('fa-eye');
+    }
+}
+
+toggleModelBtn.addEventListener('click', () => {
+    isModelPillVisible = !isModelPillVisible;
+    storage.set({ isModelPillVisible });
+    updateModelPillVisibility();
+});
+
+// --- Event Listeners ---
+
+settingsBtn.addEventListener('click', () => showSetupView());
+closeSettingsBtn.addEventListener('click', () => hideSetupView());
+
 askBtn.addEventListener('click', handleAskQuestion);
 questionInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleAskQuestion();
@@ -185,13 +254,7 @@ resetBtn.addEventListener('click', () => {
     }
 });
 
-modelSelect.addEventListener('change', (e) => {
-    if (e.target.value === 'free') {
-        apiKeyContainer.style.display = 'none';
-    } else {
-        apiKeyContainer.style.display = 'flex';
-    }
-});
+modelSelect.addEventListener('change', updateSettingsUI);
 
 saveSetupBtn.addEventListener('click', () => {
     const model = modelSelect.value;
@@ -200,7 +263,9 @@ saveSetupBtn.addEventListener('click', () => {
     if (model !== 'free') {
         key = apiKeyInput.value.trim();
         if (!key) {
-            showError(`Please enter a valid API key for ${model}.`);
+            // Can add a temporary red border or toast here if needed
+            apiKeyInput.classList.add('border-red-500');
+            setTimeout(() => apiKeyInput.classList.remove('border-red-500'), 2000);
             return;
         }
     }
@@ -211,24 +276,13 @@ saveSetupBtn.addEventListener('click', () => {
         apiKey: savedApiKey 
     });
     
-    showActiveModelView();
+    updateActiveModelText();
+    hideSetupView();
 });
 
-changeModelBtn.addEventListener('click', () => {
-    showSetupView();
-});
+// --- Functions ---
 
-// Functions
 async function handleAskQuestion() {
-    // If in setup mode and asking a question, try saving first
-    if (setupContainer.style.display === 'flex') {
-        saveSetupBtn.click();
-        if (setupContainer.style.display === 'flex') {
-             // Validation failed
-             return; 
-        }
-    }
-
     const question = questionInput.value.trim();
     const model = modelSelect.value;
     const apiKey = savedApiKey;
@@ -236,7 +290,8 @@ async function handleAskQuestion() {
     if (!question || !currentVideoInfo) return;
 
     if (model !== 'free' && !apiKey) {
-        showError(`Please enter a valid API key for the ${model} model.`);
+        showError(`Please configure your API key for ${model} in settings.`);
+        showSetupView();
         return;
     }
     
@@ -280,11 +335,11 @@ async function handleAskQuestion() {
             return;
         }
 
-        // Streaming text/plain response — read progressively
+        // Streaming text/plain response
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        // Create a bot message bubble for progressive token updates
+        // Create a bot message bubble
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('message', 'bot-message');
         chatHistoryEl.appendChild(msgDiv);
@@ -301,7 +356,6 @@ async function handleAskQuestion() {
             scrollToBottom();
         }
 
-        // Save the complete streamed message to chat history
         if (fullAnswer) {
             chatHistory.push({ sender: 'bot', text: fullAnswer });
             storage.set({ chatHistory: chatHistory });
@@ -309,7 +363,7 @@ async function handleAskQuestion() {
 
     } catch (err) {
         removeElement(loadingId);
-        showError("Unable to connect to the RAG server. Make sure the FastAPI backend is running.");
+        showError("Unable to connect to the server. Make sure FastAPI is running.");
         console.error("Popup Error:", err);
     } finally {
         setLoadingState(false);

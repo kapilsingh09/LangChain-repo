@@ -12,6 +12,9 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
@@ -44,6 +47,7 @@ from langchain_core.chat_history import InMemoryChatMessageHistory
 
 
 HF_API_KEY = os.getenv("HF_API_KEY")
+
 
 START_TIME = time.time()
 
@@ -243,7 +247,7 @@ def get_model(model_name: str, api_key: str | None = None):
             raise ValueError("API Key is required for Gemini model.")
         print("API Key : ", api_key)
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             google_api_key=api_key,
         )
         return llm, embedding
