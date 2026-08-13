@@ -3,55 +3,16 @@ function generateSessionId() {
     return 'sess_' + Math.random().toString(36).substring(2, 15);
 }
 
-// Robust storage wrapper
-const storage = {
-    get: (keys, callback) => {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.get(keys, callback);
-                return;
-            }
-        } catch (e) {
-            console.warn("chrome.storage.local not available, falling back to localStorage:", e);
-        }
-        
-        const result = {};
-        keys.forEach(key => {
-            const val = localStorage.getItem(key);
-            try {
-                result[key] = val ? JSON.parse(val) : null;
-            } catch {
-                result[key] = val;
-            }
-        });
-        callback(result);
-    },
-    set: (data) => {
-        try {
-            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-                chrome.storage.local.set(data);
-                return;
-            }
-        } catch (e) {
-            console.warn("chrome.storage.local not available, falling back to localStorage:", e);
-        }
-        
-        Object.keys(data).forEach(key => {
-            localStorage.setItem(key, JSON.stringify(data[key]));
-        });
-    }
-};
-
 // Configuration
 const API_BASE_URL = "http://localhost:8000";
 
 // State
 let currentVideoInfo = null;
 let sessionId = null;
-let chatHistory = [];
 let savedApiKey = '';
 let isBannerVisible = true;
 let isModelPillVisible = true;
+let currentActiveBotMessageDiv = null;
 
 // DOM Elements
 const videoTitleEl = document.getElementById('video-title');
@@ -111,17 +72,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } else {
             videoTitleEl.textContent = "Status: Invalid YouTube URL";
-            showError("Could not detect video ID from URL.");
+            renderMessage("bot", "Could not detect video ID from URL.", true);
         }
     } else {
         videoTitleEl.textContent = "Status: Not on a YouTube video";
-        showError("Please open a YouTube video first to use YouTube RAG.");
+        renderMessage("bot", "Please open a YouTube video first to use YouTube RAG.", true);
     }
 });
 
 // Load state from storage
 function loadState(videoId) {
-    storage.get(['apiKey', 'selectedModel', 'videoId', 'sessionId', 'chatHistory', 'isBannerVisible', 'isModelPillVisible'], (result) => {
+    chrome.storage.local.get([
+        'apiKey', 'selectedModel', 'videoId', 'sessionId', 
+        'chatHistory', 'isBannerVisible', 'isModelPillVisible',
+        'isGenerating', 'currentStream', 'currentError'
+    ], (result) => {
         
         // Restore Toggles
         if (result.isBannerVisible !== undefined) {
@@ -146,22 +111,49 @@ function loadState(videoId) {
         // Show/Hide API key input based on model
         updateSettingsUI();
 
-        // Check if settings are missing (if gemini/grok selected but no key)
+        // Check if settings are missing
         if (result.selectedModel !== 'free' && !result.apiKey) {
             showSetupView();
         }
 
         // Restore chat history if video matches
-        if (result.videoId === videoId && result.sessionId && result.chatHistory) {
+        if (result.videoId === videoId && result.sessionId) {
             sessionId = result.sessionId;
-            chatHistory = result.chatHistory;
-            renderChatHistory();
+            const history = result.chatHistory || [];
+            renderChatHistory(history);
+            
+            // Resume stream if currently generating
+            if (result.isGenerating) {
+                setLoadingState(true);
+                if (result.currentStream) {
+                    // Update existing stream
+                    currentActiveBotMessageDiv = document.createElement('div');
+                    currentActiveBotMessageDiv.classList.add('message', 'bot-message');
+                    currentActiveBotMessageDiv.textContent = result.currentStream;
+                    chatHistoryEl.appendChild(currentActiveBotMessageDiv);
+                    scrollToBottom();
+                } else {
+                    // Start thinking indicator
+                    currentActiveBotMessageDiv = addLoadingIndicator();
+                }
+            } else if (result.currentError) {
+                renderMessage("bot", result.currentError, true);
+                chrome.storage.local.set({ currentError: null }); // clear after showing
+            }
+
         } else {
             // New video or no history, start fresh
             sessionId = generateSessionId();
-            chatHistory = [];
-            storage.set({ videoId: videoId, sessionId: sessionId, chatHistory: [] });
-            addMessage("bot", "Hello! I'm ready to answer questions about this video. What would you like to know?");
+            const initMsg = [{ sender: 'bot', text: "Hello! I'm ready to answer questions about this video. What would you like to know?" }];
+            chrome.storage.local.set({ 
+                videoId: videoId, 
+                sessionId: sessionId, 
+                chatHistory: initMsg,
+                isGenerating: false,
+                currentStream: "",
+                currentError: null
+            });
+            renderChatHistory(initMsg);
         }
     });
 }
@@ -207,7 +199,7 @@ function updateBannerVisibility() {
 
 toggleBannerBtn.addEventListener('click', () => {
     isBannerVisible = !isBannerVisible;
-    storage.set({ isBannerVisible });
+    chrome.storage.local.set({ isBannerVisible });
     updateBannerVisibility();
 });
 
@@ -229,7 +221,7 @@ function updateModelPillVisibility() {
 
 toggleModelBtn.addEventListener('click', () => {
     isModelPillVisible = !isModelPillVisible;
-    storage.set({ isModelPillVisible });
+    chrome.storage.local.set({ isModelPillVisible });
     updateModelPillVisibility();
 });
 
@@ -245,13 +237,15 @@ questionInput.addEventListener('keypress', (e) => {
 
 resetBtn.addEventListener('click', () => {
     sessionId = generateSessionId();
-    chatHistory = [];
-    chatHistoryEl.innerHTML = '';
-    
-    if (currentVideoInfo) {
-        storage.set({ sessionId: sessionId, chatHistory: chatHistory });
-        addMessage("bot", "Conversation reset. What would you like to know?");
-    }
+    const initMsg = [{ sender: 'bot', text: "Conversation reset. What would you like to know?" }];
+    chrome.storage.local.set({ 
+        sessionId: sessionId, 
+        chatHistory: initMsg,
+        isGenerating: false,
+        currentStream: "",
+        currentError: null
+    });
+    renderChatHistory(initMsg);
 });
 
 modelSelect.addEventListener('change', updateSettingsUI);
@@ -263,7 +257,6 @@ saveSetupBtn.addEventListener('click', () => {
     if (model !== 'free') {
         key = apiKeyInput.value.trim();
         if (!key) {
-            // Can add a temporary red border or toast here if needed
             apiKeyInput.classList.add('border-red-500');
             setTimeout(() => apiKeyInput.classList.remove('border-red-500'), 2000);
             return;
@@ -271,7 +264,7 @@ saveSetupBtn.addEventListener('click', () => {
     }
     
     savedApiKey = key;
-    storage.set({ 
+    chrome.storage.local.set({ 
         selectedModel: model,
         apiKey: savedApiKey 
     });
@@ -280,9 +273,59 @@ saveSetupBtn.addEventListener('click', () => {
     hideSetupView();
 });
 
-// --- Functions ---
 
-async function handleAskQuestion() {
+// --- Live Storage Updates (The Magic) ---
+
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace !== 'local') return;
+
+    // Chat History updated (either user asked a question, or bot finished)
+    if (changes.chatHistory) {
+        renderChatHistory(changes.chatHistory.newValue);
+    }
+
+    // Streaming updates
+    if (changes.currentStream) {
+        const streamText = changes.currentStream.newValue;
+        if (streamText) {
+            // Replace thinking indicator with actual text bubble if it's the first chunk
+            if (!currentActiveBotMessageDiv || currentActiveBotMessageDiv.classList.contains('loading')) {
+                if (currentActiveBotMessageDiv) currentActiveBotMessageDiv.remove();
+                currentActiveBotMessageDiv = document.createElement('div');
+                currentActiveBotMessageDiv.classList.add('message', 'bot-message');
+                chatHistoryEl.appendChild(currentActiveBotMessageDiv);
+            }
+            currentActiveBotMessageDiv.textContent = streamText;
+            scrollToBottom();
+        }
+    }
+
+    // Is Generating State Changes
+    if (changes.isGenerating) {
+        const isGen = changes.isGenerating.newValue;
+        setLoadingState(isGen);
+        
+        if (isGen) {
+            // Just started, show thinking indicator
+            if (currentActiveBotMessageDiv) currentActiveBotMessageDiv.remove();
+            currentActiveBotMessageDiv = addLoadingIndicator();
+        } else {
+            // Finished generating
+            currentActiveBotMessageDiv = null;
+        }
+    }
+
+    // Errors
+    if (changes.currentError && changes.currentError.newValue) {
+        renderMessage("bot", changes.currentError.newValue, true);
+        chrome.storage.local.set({ currentError: null }); // clear it so it doesn't fire again on reload
+    }
+});
+
+
+// --- Ask Question Logic ---
+
+function handleAskQuestion() {
     const question = questionInput.value.trim();
     const model = modelSelect.value;
     const apiKey = savedApiKey;
@@ -290,93 +333,27 @@ async function handleAskQuestion() {
     if (!question || !currentVideoInfo) return;
 
     if (model !== 'free' && !apiKey) {
-        showError(`Please configure your API key for ${model} in settings.`);
+        renderMessage("bot", `Please configure your API key for ${model} in settings.`, true);
         showSetupView();
         return;
     }
     
-    addMessage("user", question);
     questionInput.value = '';
     
-    setLoadingState(true);
-    const loadingId = addLoadingIndicator();
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/ask`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                youtube_url: currentVideoInfo.url,
-                question: question,
-                session_id: sessionId,
-                model: model,
-                api_key: apiKey
-            })
-        });
-        
-        removeElement(loadingId);
-
-        const contentType = response.headers.get('content-type') || '';
-
-        // JSON response means an error from the backend
-        if (contentType.includes('application/json')) {
-            const data = await response.json();
-            if (data.error) {
-                showError(data.error + (data.details ? `: ${data.details}` : ""));
-            } else {
-                showError("Received an unexpected response from the server.");
-            }
-            return;
+    // Instead of doing the fetch here, send to background
+    chrome.runtime.sendMessage({
+        type: "ASK_QUESTION",
+        payload: {
+            youtube_url: currentVideoInfo.url,
+            question: question,
+            session_id: sessionId,
+            model: model,
+            api_key: apiKey
         }
-
-        // Handle unexpected non-OK responses
-        if (!response.ok) {
-            showError(`Server error: ${response.status} ${response.statusText}`);
-            return;
-        }
-
-        // Streaming text/plain response
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        // Create a bot message bubble
-        const msgDiv = document.createElement('div');
-        msgDiv.classList.add('message', 'bot-message');
-        chatHistoryEl.appendChild(msgDiv);
-
-        let fullAnswer = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const text = decoder.decode(value, { stream: true });
-            fullAnswer += text;
-            msgDiv.textContent = fullAnswer;
-            scrollToBottom();
-        }
-
-        if (fullAnswer) {
-            chatHistory.push({ sender: 'bot', text: fullAnswer });
-            storage.set({ chatHistory: chatHistory });
-        }
-
-    } catch (err) {
-        removeElement(loadingId);
-        showError("Unable to connect to the server. Make sure FastAPI is running.");
-        console.error("Popup Error:", err);
-    } finally {
-        setLoadingState(false);
-    }
+    });
 }
 
-function addMessage(sender, text, isError = false) {
-    if (!isError) {
-        chatHistory.push({ sender, text });
-        storage.set({ chatHistory: chatHistory });
-    }
-    renderMessage(sender, text, isError);
-}
+// --- DOM Render Functions ---
 
 function renderMessage(sender, text, isError = false) {
     const msgDiv = document.createElement('div');
@@ -390,21 +367,16 @@ function renderMessage(sender, text, isError = false) {
     scrollToBottom();
 }
 
-function renderChatHistory() {
+function renderChatHistory(historyArr) {
     chatHistoryEl.innerHTML = '';
-    chatHistory.forEach(msg => {
+    if (!historyArr) return;
+    historyArr.forEach(msg => {
         renderMessage(msg.sender, msg.text);
     });
 }
 
-function showError(text) {
-    addMessage("bot", text, true);
-}
-
 function addLoadingIndicator() {
-    const id = 'loading-' + Date.now();
     const loadingDiv = document.createElement('div');
-    loadingDiv.id = id;
     loadingDiv.classList.add('loading');
     
     const spinner = document.createElement('div');
@@ -418,12 +390,7 @@ function addLoadingIndicator() {
     
     chatHistoryEl.appendChild(loadingDiv);
     scrollToBottom();
-    return id;
-}
-
-function removeElement(id) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
+    return loadingDiv;
 }
 
 function setLoadingState(isLoading) {
