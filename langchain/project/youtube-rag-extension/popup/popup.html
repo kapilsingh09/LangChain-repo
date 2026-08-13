@@ -18,6 +18,27 @@
       <p id="video-title">Detecting video...</p>
     </div>
 
+    <div class="settings-container" style="margin-bottom: 12px;">
+      <!-- SETUP VIEW -->
+      <div id="setup-container" style="display: flex; flex-direction: column; gap: 8px;">
+        <select id="model-select" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); font-family: Inter, sans-serif; outline: none; background-color: var(--surface-color); color: var(--text-primary);">
+          <option value="free">Free Model (Qwen)</option>
+          <option value="gemini">Gemini</option>
+          <option value="grok">Grok</option>
+        </select>
+        <div id="api-key-container" style="display: none; flex-direction: column; gap: 8px;">
+          <input type="password" id="api-key-input" placeholder="Enter API Key..." style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); font-family: Inter, sans-serif; outline: none; background-color: var(--bg-color); color: var(--text-primary);" />
+        </div>
+        <button id="save-setup-btn" style="padding: 8px; border-radius: 6px; border: none; background-color: var(--primary-color); color: white; cursor: pointer; font-family: Inter, sans-serif; font-weight: 500;">Activate Model</button>
+      </div>
+
+      <!-- ACTIVE VIEW -->
+      <div id="active-model-container" style="display: none; flex-direction: row; justify-content: space-between; align-items: center; padding: 10px; background-color: var(--surface-color); border-radius: 6px; border: 1px solid var(--border-color);">
+        <span id="active-model-text" style="color: var(--text-primary); font-size: 0.9rem; font-weight: 500;">Active: Free Model</span>
+        <button id="change-model-btn" style="padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); cursor: pointer; font-size: 0.8rem; font-family: Inter, sans-serif;">Change</button>
+      </div>
+    </div>
+
     <div class="chat-container">
       <div id="chat-history" class="chat-history">
         <!-- Messages will appear here -->
