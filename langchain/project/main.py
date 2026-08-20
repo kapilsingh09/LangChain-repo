@@ -96,7 +96,7 @@ def format_docs(docs):
 #  else returns "qa" for normal RAG flow
 # ─────────────────────────────────────────────
 SUMMARY_KEYWORDS = [
-    "summarize", "summary", "tl;dr", "tldr", "overview",
+    "summarize", 'summarize with key points','summarize with bullet points', "summary", "tl;dr", "tldr", "overview",
     "what is this video about", "what's this video about",
     "explain the video", "gist", "brief", "short description",
     "main points", "key points", "what does this video cover",
