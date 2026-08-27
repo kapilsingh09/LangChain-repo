@@ -4,7 +4,7 @@ loader = DirectoryLoader(
     path='books',
     glob='*.pdf',
     loader_cls=PyPDFLoader
-)
+)   
 
 docs = loader.lazy_load()
 
