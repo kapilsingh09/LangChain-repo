@@ -5,8 +5,8 @@ import { Sidebar } from "../components/layout/Sidebar";
 import { ResearchReport } from "../components/research/ResearchReport";
 import { LoadingSkeleton } from "../components/common/LoadingSkeleton";
 import { useAuth } from "../hooks/useAuth";
-import { getResearchById } from "../services/api";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { getResearchById, deleteResearch } from "../services/api";
+import { ArrowLeft, AlertTriangle, Trash2, Loader2 } from "lucide-react";
 
 export const ResearchDetail = () => {
   const { id } = useParams();
@@ -16,7 +16,23 @@ export const ResearchDetail = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [researchData, setResearchData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
+
+  const handleDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this research inquiry?")) return;
+    try {
+      setDeleting(true);
+      const token = await getIdToken();
+      if (!token) throw new Error("Authentication required");
+      await deleteResearch(id, token);
+      navigate("/");
+    } catch (err) {
+      console.error("Failed to delete inquiry:", err);
+      alert(err.message || "Failed to delete inquiry.");
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -60,18 +76,36 @@ export const ResearchDetail = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+        <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
 
         <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6">
           <div className="max-w-4xl mx-auto space-y-6">
-            {/* Back Button */}
-            <button
-              onClick={() => navigate("/")}
-              className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Workspace</span>
-            </button>
+            {/* Top Action Bar */}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => navigate("/")}
+                className="inline-flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Workspace</span>
+              </button>
+
+              {!loading && !error && researchData && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-neutral-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all disabled:opacity-50"
+                  title="Delete this research inquiry"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  <span>{deleting ? "Deleting..." : "Delete Inquiry"}</span>
+                </button>
+              )}
+            </div>
 
             {loading && (
               <div className="p-8 rounded-2xl bg-[#111111] border border-neutral-800">

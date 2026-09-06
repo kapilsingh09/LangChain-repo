@@ -2,6 +2,7 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReportActions } from "./ReportActions";
+import { ReportQualityCard } from "./ReportQualityCard";
 
 export const ResearchReport = ({ 
   report, 
@@ -49,6 +50,11 @@ export const ResearchReport = ({
           />
         </div>
       </div>
+
+      {/* Research Quality & Rigor Audit */}
+      {critique && (
+        <ReportQualityCard critique={critique} />
+      )}
 
       {/* Rendered Markdown Body */}
       <article className="p-6 sm:p-10 rounded-2xl glass-surface shadow-2xl overflow-hidden prose prose-invert max-w-none font-reading">
@@ -106,24 +112,48 @@ export const ResearchReport = ({
             td: ({ node, ...props }) => (
               <td className="p-3 border-b border-neutral-800 text-neutral-300 hover:bg-white/[0.02]" {...props} />
             ),
-            a: ({ node, ...props }) => (
-              <a
-                className="text-white underline underline-offset-4 decoration-white/40 hover:decoration-white transition-colors"
-                target="_blank"
-                rel="noopener noreferrer"
-                {...props}
-              />
-            ),
-            img: ({ node, ...props }) => (
-              <div className="my-6 rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 p-2">
-                <img className="max-w-full rounded-lg mx-auto" {...props} alt={props.alt || "Research visual"} />
-                {props.alt && (
-                  <p className="text-center text-xs text-neutral-400 mt-2 font-mono italic">
-                    {props.alt}
-                  </p>
-                )}
-              </div>
-            ),
+            a: ({ href, children, ...props }) => {
+              const isSafe = /^https?:\/\//i.test(href || "");
+              if (!isSafe) {
+                return <span>{children}</span>;
+              }
+              return (
+                <a
+                  href={href}
+                  className="text-white underline underline-offset-4 decoration-white/40 hover:decoration-white transition-colors"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  {...props}
+                >
+                  {children}
+                </a>
+              );
+            },
+            img: ({ src, alt, ...props }) => {
+              const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+              const resolvedSrc = src?.startsWith("/images/")
+                ? `${apiBase.replace(/\/+$/, "")}${src}`
+                : src?.startsWith("images/")
+                ? `${apiBase.replace(/\/+$/, "")}/${src}`
+                : src;
+
+              return (
+                <div className="my-6 rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 p-2">
+                  <img
+                    className="max-w-full rounded-lg mx-auto"
+                    src={resolvedSrc}
+                    alt={alt || "Research visual"}
+                    loading="lazy"
+                    {...props}
+                  />
+                  {alt && (
+                    <p className="text-center text-xs text-neutral-400 mt-2 font-mono italic">
+                      {alt}
+                    </p>
+                  )}
+                </div>
+              );
+            },
             hr: ({ node, ...props }) => (
               <hr className="my-8 border-neutral-800" {...props} />
             ),

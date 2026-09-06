@@ -17,9 +17,11 @@ AVAILABLE ENDPOINTS:
 """
 
 import os
+from pathlib import Path
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # ── Import and validate API keys BEFORE anything else ────────────────────────
 # If any key is missing, this will raise a clear error and stop the server.
@@ -86,24 +88,41 @@ app = FastAPI(
 # SECURITY: We only allow the specific FRONTEND_URL — not all origins.
 # This prevents other websites from making API calls on behalf of your users.
 
-allowed_origins = [
-    FRONTEND_URL,
+# In production, FRONTEND_URL is set to the deployed frontend domain.
+# For local development, localhost/127.0.0.1 origins are also permitted.
+origins_set = {
+    FRONTEND_URL.rstrip("/"),
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+}
+allowed_origins = list(origins_set)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+# ── Security Headers Middleware ───────────────────────────────────────────────
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# ── Static Files (AI-Generated Technical Diagrams) ────────────────────────────
+images_dir = Path("images").resolve()
+images_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
 
 
 # ── Health Check Endpoints ────────────────────────────────────────────────────

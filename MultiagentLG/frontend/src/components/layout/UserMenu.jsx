@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { LogOut, User, Sparkles, ExternalLink } from "lucide-react";
+import { LogOut, CircleUser } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 
 export const UserMenu = () => {
@@ -19,14 +19,21 @@ export const UserMenu = () => {
 
   if (!currentUser) return null;
 
-  const initials = currentUser.displayName
-    ? currentUser.displayName
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : currentUser.email?.[0].toUpperCase() || "U";
+  const getUserFirstName = () => {
+    if (!currentUser) return "User";
+    if (currentUser.displayName && currentUser.displayName.trim()) {
+      const first = currentUser.displayName.trim().split(/[\s._-]+/)[0];
+      if (first) return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+    }
+    if (currentUser.email && currentUser.email.trim()) {
+      const prefix = currentUser.email.split("@")[0].trim();
+      const firstPart = prefix.split(/[._\d-]+/)[0] || prefix;
+      if (firstPart) return firstPart.charAt(0).toUpperCase() + firstPart.slice(1).toLowerCase();
+    }
+    return "User";
+  };
+  const displayName = getUserFirstName();
+  const userInitial = displayName.charAt(0).toUpperCase() || "U";
 
   return (
     <div className="relative" ref={menuRef}>
@@ -37,12 +44,12 @@ export const UserMenu = () => {
         {currentUser.photoURL ? (
           <img
             src={currentUser.photoURL}
-            alt={currentUser.displayName || "User"}
+            alt={displayName}
             className="w-8 h-8 rounded-full object-cover border border-white/10 ring-1 ring-white/20"
           />
         ) : (
-          <div className="w-8 h-8 rounded-full bg-neutral-800 border border-white/20 text-white flex items-center justify-center text-xs font-semibold">
-            {initials}
+          <div className="w-8 h-8 rounded-full bg-neutral-800 border border-white/20 text-white flex items-center justify-center">
+            <CircleUser className="w-4 h-4 text-neutral-300" />
           </div>
         )}
       </button>
@@ -51,7 +58,7 @@ export const UserMenu = () => {
         <div className="absolute right-0 mt-2 w-64 rounded-xl bg-neutral-900 border border-neutral-800 shadow-2xl py-2 z-50 animate-in fade-in zoom-in-95">
           <div className="px-4 py-2.5 border-b border-neutral-800">
             <p className="text-xs font-medium text-white truncate">
-              {currentUser.displayName || "Researcher"}
+              {displayName}
             </p>
             <p className="text-[11px] text-neutral-400 font-mono truncate">
               {currentUser.email}

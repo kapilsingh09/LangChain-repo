@@ -27,7 +27,7 @@ import json
 import threading
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.models import ResearchRequest, ResearchResponse
@@ -115,6 +115,7 @@ def _build_stage_event(node_name: str, updates: dict, researcher_count: int) -> 
 )
 async def stream_research(
     request: ResearchRequest,
+    http_request: Request,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -132,50 +133,52 @@ async def stream_research(
         2. We run it in a background thread (so it doesn't block the async server)
         3. The thread puts events into an asyncio.Queue via loop.call_soon_threadsafe()
         4. The async generator reads from the queue and yields SSE-formatted text
-        5. FastAPI's StreamingResponse sends each chunk to the browser immediately
+        5. If client disconnects, cancel_event aborts the background thread to prevent token waste
     """
     uid = current_user["uid"]
     question = request.question.strip()
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Get the event loop BEFORE starting the thread
-    # The thread needs this reference to safely push events into the async world
-    loop = asyncio.get_event_loop()
+    # Get the currently running event loop safely
+    loop = asyncio.get_running_loop()
 
     # asyncio.Queue is the bridge between the sync thread and async generator
     queue: asyncio.Queue = asyncio.Queue()
+
+    # Cancellation event to stop the pipeline if the client disconnects
+    cancel_event = threading.Event()
 
     def run_pipeline():
         """
         Runs in a background thread.
         Uses workflow.stream() to get real node-by-node events.
         Pushes SSE events into the asyncio queue.
+        Halts immediately if cancel_event is set.
         """
         try:
-            # Accumulate the full state manually as nodes complete
-            # (workflow.stream with "updates" gives deltas, not full state)
             final_state: dict = {"question": question}
             researcher_count = 0
 
-            # workflow.stream() yields {node_name: state_updates} after each node
-            # stream_mode="updates" = only the changes from each node (not full state)
             for chunk in workflow.stream(
                 {"question": question},
                 config=config,
                 stream_mode="updates",
             ):
+                # Check for cancellation before processing next node
+                if cancel_event.is_set():
+                    print(f"🛑 Stream research cancelled by client for thread {thread_id}")
+                    return
+
                 # Each chunk is {node_name: {field: value, ...}}
                 node_name = list(chunk.keys())[0]
                 updates = chunk[node_name] or {}
 
                 # Accumulate state, handling special merge rules
                 for key, val in updates.items():
-                    # Lists with operator.add → extend (not overwrite)
                     if key in ("research_results", "messages") and isinstance(val, list):
                         final_state.setdefault(key, [])
                         final_state[key] = final_state[key] + val
-                    # Booleans with operator.or_ → OR logic
                     elif key == "web_search_performed":
                         final_state[key] = final_state.get(key, False) or bool(val)
                     else:
@@ -186,7 +189,6 @@ async def stream_research(
 
                 if node_name == "researcher":
                     researcher_count += 1
-                    # If web search was used, emit a separate web_search event
                     if updates.get("web_search_performed"):
                         web_event = {
                             "type": "stage_update",
@@ -202,6 +204,9 @@ async def stream_research(
                     loop.call_soon_threadsafe(
                         queue.put_nowait, f"data: {json.dumps(event)}\n\n"
                     )
+
+            if cancel_event.is_set():
+                return
 
             # ── Pipeline complete — save to Firestore ─────────────────────────
             final_report = final_state.get("final_report", "")
@@ -239,12 +244,12 @@ async def stream_research(
             )
 
         except Exception as e:
-            # Pipeline crashed — send error event and don't crash the server
-            print(f"❌ Stream research pipeline error: {e}")
-            error_event = {"type": "error", "message": "Research pipeline failed. Please try again."}
-            loop.call_soon_threadsafe(
-                queue.put_nowait, f"data: {json.dumps(error_event)}\n\n"
-            )
+            if not cancel_event.is_set():
+                print(f"❌ Stream research pipeline error: {e}")
+                error_event = {"type": "error", "message": "Research pipeline failed. Please try again."}
+                loop.call_soon_threadsafe(
+                    queue.put_nowait, f"data: {json.dumps(error_event)}\n\n"
+                )
         finally:
             # Sentinel: None signals the async generator to stop
             loop.call_soon_threadsafe(queue.put_nowait, None)
@@ -266,41 +271,50 @@ async def stream_research(
         Async generator that reads events from the queue and yields SSE text.
         Each SSE message format: "data: {json}\n\n"
         """
-        # Immediately tell the frontend we've started
-        yield f"data: {start_event}\n\n"
+        try:
+            # Immediately tell the frontend we've started
+            yield f"data: {start_event}\n\n"
 
-        keepalive_counter = 0
+            keepalive_counter = 0
 
-        while True:
-            try:
-                # Wait up to 30 seconds for the next event
-                item = await asyncio.wait_for(queue.get(), timeout=30.0)
-            except asyncio.TimeoutError:
-                # Send a keepalive comment to prevent connection timeout
-                # SSE comments start with ":" and are ignored by the browser
-                keepalive_counter += 1
-                yield f": keepalive {keepalive_counter}\n\n"
-                continue
+            while True:
+                # If client has disconnected, stop generating and abort pipeline
+                if await http_request.is_disconnected():
+                    cancel_event.set()
+                    break
 
-            if item is None:
-                # Sentinel received — pipeline finished
-                break
+                try:
+                    # Wait up to 15 seconds for the next event
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    if await http_request.is_disconnected():
+                        cancel_event.set()
+                        break
+                    keepalive_counter += 1
+                    yield f": keepalive {keepalive_counter}\n\n"
+                    continue
 
-            yield item
+                if item is None:
+                    # Sentinel received — pipeline finished
+                    break
+
+                yield item
+        finally:
+            # Signal the background thread to halt if disconnected early
+            cancel_event.set()
 
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",       # Don't cache SSE
-            "Connection": "keep-alive",         # Keep connection open
-            "X-Accel-Buffering": "no",          # Disable nginx buffering
-            "Access-Control-Allow-Origin": "*", # CORS for SSE
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 
 
-# ── POST /research — Original Blocking Endpoint (COMPLETELY UNCHANGED) ────────
+# ── POST /research — Original Blocking Endpoint ───────────────────────────────
 
 @router.post(
     "",
@@ -331,9 +345,10 @@ async def run_research(
         raise HTTPException(status_code=422, detail=str(e))
 
     except Exception as e:
+        print(f"❌ Research pipeline error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Research pipeline failed: {str(e)}",
+            detail="The research pipeline encountered an internal error. Please try again.",
         )
 
     final_report = final_state.get("final_report", "Report generation failed.")

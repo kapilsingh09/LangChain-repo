@@ -6,10 +6,11 @@ import { ResearchActivity } from "../components/research/ResearchActivity";
 import { ResearchReport } from "../components/research/ResearchReport";
 import { EmptyState } from "../components/common/EmptyState";
 import { useResearch } from "../hooks/useResearch";
-import { AlertCircle, RotateCcw, Home as HomeIcon } from "lucide-react";
+import { AlertCircle, RotateCcw, Home as HomeIcon, LayoutGrid, X } from "lucide-react";
 
 export const Home = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showTopics, setShowTopics] = useState(false);
   const {
     isStreaming,
     stages,
@@ -47,10 +48,13 @@ export const Home = () => {
 
       {/* Main Workspace Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
+        <Header 
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
+          sidebarOpen={sidebarOpen} 
+        />
 
         <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 flex flex-col justify-between">
-          <div className="max-w-4xl w-full mx-auto space-y-6">
+          <div className={`max-w-4xl w-full mx-auto ${!hasActiveContent && !error && !showTopics ? "flex-1 flex flex-col justify-center my-auto" : "space-y-6"}`}>
             {/* Error Message if any */}
             {error && (
               <div className="p-4 rounded-xl glass border-red-500/20 text-red-300 text-sm flex items-start justify-between gap-3 animate-in fade-in">
@@ -79,7 +83,11 @@ export const Home = () => {
 
             {/* If no query has been run yet */}
             {!hasActiveContent && !error && (
-              <EmptyState onSelectPrompt={handlePromptSelect} />
+              <EmptyState 
+                onSelectPrompt={handlePromptSelect} 
+                showTopics={showTopics}
+                onCloseTopics={() => setShowTopics(false)}
+              />
             )}
 
             {/* Cancelled state — show "Start Over" banner */}
@@ -131,7 +139,34 @@ export const Home = () => {
           </div>
 
           {/* Sticky Research Input Bar */}
-          <div className="pt-6 pb-2 sticky bottom-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/90 to-transparent">
+          <div className="pt-4 pb-2 sticky bottom-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/90 to-transparent">
+            {/* Ultra-compact Topics toggle pill right above input */}
+            {!hasActiveContent && !error && (
+              <div className="flex justify-center mb-1.5 animate-in fade-in duration-200">
+                <button
+                  onClick={() => setShowTopics(!showTopics)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border transition-all active:scale-95 group text-[10px] font-mono ${
+                    showTopics
+                      ? "bg-white/[0.06] hover:bg-red-500/10 border-white/[0.12] hover:border-red-500/30 text-neutral-300 hover:text-red-300"
+                      : "bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/[0.12] text-neutral-400 hover:text-neutral-200"
+                  }`}
+                  title={showTopics ? "Hide topic cards" : "Browse topic cards and prompts"}
+                >
+                  {showTopics ? (
+                    <>
+                      <X className="w-2.5 h-2.5 text-neutral-400 group-hover:text-red-400 transition-colors" />
+                      <span>Hide Topics</span>
+                    </>
+                  ) : (
+                    <>
+                      <LayoutGrid className="w-2.5 h-2.5 text-neutral-500 group-hover:text-neutral-300 transition-colors" />
+                      <span>Topics (24)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
             <ResearchInput
               onSubmit={startResearch}
               onStop={stopResearch}

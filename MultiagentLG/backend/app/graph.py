@@ -111,11 +111,9 @@ def build_graph():
     g.add_edge("image_subgraph", "file_saver")
     g.add_edge("file_saver", END)
 
-    # ── Compile with in-memory checkpointing ─────────────────────────────────
-    # InMemorySaver allows the graph to pause and resume (e.g., for human-in-the-loop).
-    # Each run is identified by a thread_id in the config.
-    checkpointer = InMemorySaver()
-    return g.compile(checkpointer=checkpointer)
+    # ── Compile workflow ─────────────────────────────────────────────────────
+    # Compiled statelessly to prevent unbounded process memory accumulation in long-running servers.
+    return g.compile()
 
 
 # The compiled graph — imported and used by the API route

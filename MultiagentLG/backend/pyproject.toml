@@ -27,4 +27,7 @@ dependencies = [
 
     # Data validation
     "pydantic>=2.0.0",
+
+    # Firebase Admin SDK
+    "firebase-admin>=6.0.0",
 ]

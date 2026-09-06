@@ -214,3 +214,62 @@ def get_research_by_id(uid: str, research_id: str) -> Optional[dict]:
         data["completed_at"] = data["completed_at"].isoformat()
 
     return data
+
+
+# ── Delete Research ───────────────────────────────────────────────────────────
+
+def delete_research(uid: str, research_id: str) -> bool:
+    """
+    Delete a specific research document for the given user.
+
+    Returns True if successfully deleted, False if not found or unauthorized.
+    """
+    db = _get_db()
+    doc_ref = (
+        db.collection("users")
+        .document(uid)
+        .collection("researches")
+        .document(research_id)
+    )
+
+    doc = doc_ref.get()
+    if not doc.exists:
+        return False
+
+    data = doc.to_dict()
+    if data.get("user_id") != uid:
+        return False
+
+    doc_ref.delete()
+    print(f"🗑️ Research deleted: users/{uid}/researches/{research_id}")
+    return True
+
+
+def delete_all_research(uid: str) -> int:
+    """
+    Delete all research documents belonging to the user.
+
+    Returns the number of deleted documents.
+    """
+    db = _get_db()
+    docs = (
+        db.collection("users")
+        .document(uid)
+        .collection("researches")
+        .stream()
+    )
+
+    count = 0
+    batch = db.batch()
+    for doc in docs:
+        batch.delete(doc.reference)
+        count += 1
+        if count % 400 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    if count > 0 and count % 400 != 0:
+        batch.commit()
+
+    print(f"🗑️ Cleared {count} research documents for user {uid}")
+    return count

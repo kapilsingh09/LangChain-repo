@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { 
   Plus, 
   History, 
@@ -7,13 +7,14 @@ import {
   ChevronRight, 
   RotateCw, 
   X,
-  MoreVertical,
-  FileText,
   LogOut,
   ChevronUp,
+  Trash2,
+  Loader2,
+  CircleUser,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
-import { getResearchHistory } from "../../services/api";
+import { getResearchHistory, deleteResearch, clearAllResearch } from "../../services/api";
 
 export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
   const { getIdToken, currentUser, logout } = useAuth();
@@ -36,11 +37,23 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const userInitials = currentUser?.displayName
-    ? currentUser.displayName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : currentUser?.email?.[0]?.toUpperCase() || "U";
+  const getUserFirstName = () => {
+    if (!currentUser) return "User";
+    if (currentUser.displayName && currentUser.displayName.trim()) {
+      const first = currentUser.displayName.trim().split(/[\s._-]+/)[0];
+      if (first) return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+    }
+    if (currentUser.email && currentUser.email.trim()) {
+      const prefix = currentUser.email.split("@")[0].trim();
+      const firstPart = prefix.split(/[._\d-]+/)[0] || prefix;
+      if (firstPart) return firstPart.charAt(0).toUpperCase() + firstPart.slice(1).toLowerCase();
+    }
+    return "User";
+  };
+  const displayName = getUserFirstName();
+  const userInitials = displayName.charAt(0).toUpperCase() || "U";
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     try {
       setLoading(true);
       const token = await getIdToken();
@@ -52,11 +65,13 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getIdToken]);
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [fetchHistory]);
+
+  const [deletingId, setDeletingId] = useState(null);
 
   const handleItemClick = (researchId) => {
     navigate(`/research/${researchId}`);
@@ -70,6 +85,54 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
     navigate("/");
     if (window.innerWidth < 1024 && onClose) {
       onClose();
+    }
+  };
+
+  const handleDeleteResearch = async (e, researchId) => {
+    e.stopPropagation();
+    if (!window.confirm("Delete this research inquiry?")) return;
+
+    try {
+      setDeletingId(researchId);
+      const token = await getIdToken();
+      if (!token) return;
+
+      await deleteResearch(researchId, token);
+      setHistory((prev) => prev.filter((item) => item.research_id !== researchId));
+
+      if (activeId === researchId) {
+        if (onNewResearch) onNewResearch();
+        navigate("/");
+      }
+    } catch (err) {
+      console.error("Failed to delete research:", err);
+      alert("Failed to delete research inquiry. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleClearAllHistory = async () => {
+    if (history.length === 0) return;
+    if (!window.confirm("Are you sure you want to delete ALL research inquiries? This cannot be undone.")) return;
+
+    try {
+      setLoading(true);
+      const token = await getIdToken();
+      if (!token) return;
+
+      await clearAllResearch(token);
+      setHistory([]);
+
+      if (activeId) {
+        if (onNewResearch) onNewResearch();
+        navigate("/");
+      }
+    } catch (err) {
+      console.error("Failed to clear research history:", err);
+      alert("Failed to clear research history. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,19 +168,11 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
               <RotateCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             </button>
 
-            {/* Three-dot menu — next to reload */}
+            {/* Close sidebar button */}
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors"
               title="Close sidebar"
-            >
-              <MoreVertical className="w-3.5 h-3.5" />
-            </button>
-
-            {/* X close — mobile only */}
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors lg:hidden"
             >
               <X className="w-4 h-4" />
             </button>
@@ -159,6 +214,7 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
           ) : (
             history.map((item) => {
               const isSelected = activeId === item.research_id;
+              const isDeleting = deletingId === item.research_id;
               const dateStr = item.created_at
                 ? new Date(item.created_at).toLocaleDateString(undefined, {
                     month: "short",
@@ -167,32 +223,50 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
                 : "";
 
               return (
-                <button
+                <div
                   key={item.research_id}
-                  onClick={() => handleItemClick(item.research_id)}
-                  className={`w-full text-left p-2.5 rounded-xl border transition-all duration-150 group flex flex-col gap-1 ${
-                    isSelected
-                      ? "glass-strong text-white shadow-sm ring-1 ring-white/10"
-                      : "bg-transparent border-transparent hover:bg-white/[0.03] hover:border-white/[0.06] text-neutral-300"
-                  }`}
+                  className="relative group/item"
                 >
-                  <div className="flex items-start justify-between gap-1.5 w-full">
-                    <span className="text-xs font-medium line-clamp-2 leading-snug group-hover:text-white">
-                      {item.question}
-                    </span>
-                    <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-neutral-600 transition-transform ${isSelected ? "text-white rotate-90" : "group-hover:translate-x-0.5"}`} />
-                  </div>
-
-                  <div className="flex items-center gap-2 text-[10px] text-neutral-500 font-mono mt-0.5">
-                    {dateStr && <span>{dateStr}</span>}
-                    {item.web_search_performed && (
-                      <span className="inline-flex items-center gap-1 text-neutral-300">
-                        <Globe className="w-2.5 h-2.5" />
-                        Web
+                  <button
+                    onClick={() => handleItemClick(item.research_id)}
+                    className={`w-full text-left p-2.5 pr-8 rounded-xl border transition-all duration-150 group flex flex-col gap-1 ${
+                      isSelected
+                        ? "glass-strong text-white shadow-sm ring-1 ring-white/10"
+                        : "bg-transparent border-transparent hover:bg-white/[0.03] hover:border-white/[0.06] text-neutral-300"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-1.5 w-full">
+                      <span className="text-xs font-medium line-clamp-2 leading-snug group-hover:text-white pr-2">
+                        {item.question}
                       </span>
+                      <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-neutral-600 transition-transform ${isSelected ? "text-white rotate-90" : "group-hover:translate-x-0.5"}`} />
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[10px] text-neutral-500 font-mono mt-0.5">
+                      {dateStr && <span>{dateStr}</span>}
+                      {item.web_search_performed && (
+                        <span className="inline-flex items-center gap-1 text-neutral-300">
+                          <Globe className="w-2.5 h-2.5" />
+                          Web
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Delete Item Button */}
+                  <button
+                    onClick={(e) => handleDeleteResearch(e, item.research_id)}
+                    disabled={isDeleting}
+                    className="absolute right-2 top-2 p-1.5 rounded-lg text-neutral-500 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover/item:opacity-100 transition-all active:scale-90"
+                    title="Delete inquiry"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-red-400" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
                     )}
-                  </div>
-                </button>
+                  </button>
+                </div>
               );
             })
           )}
@@ -205,7 +279,7 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
             <div className="absolute bottom-full left-2 right-2 mb-1 rounded-xl glass-strong shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95">
               <div className="px-3.5 py-2.5 border-b border-white/[0.06]">
                 <p className="text-xs font-medium text-white truncate">
-                  {currentUser?.displayName || "Researcher"}
+                  {displayName}
                 </p>
                 <p className="text-[11px] text-neutral-500 font-mono truncate">
                   {currentUser?.email}
@@ -219,7 +293,22 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
                 </div>
               </div>
 
-              <div className="border-t border-white/[0.06] px-1.5 pt-1">
+              <div className="border-t border-white/[0.06] px-1.5 py-1 space-y-0.5">
+                {history.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      handleClearAllHistory();
+                    }}
+                    disabled={loading}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                    title="Delete all research inquiries"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear all inquiries ({history.length})</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setUserMenuOpen(false);
@@ -242,17 +331,17 @@ export const Sidebar = ({ isOpen, onClose, onNewResearch }) => {
             {currentUser?.photoURL ? (
               <img
                 src={currentUser.photoURL}
-                alt={currentUser.displayName || "User"}
+                alt={displayName}
                 className="w-8 h-8 rounded-full object-cover border border-white/10 ring-1 ring-white/10 flex-shrink-0"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-white/[0.08] border border-white/10 text-white flex items-center justify-center text-xs font-semibold flex-shrink-0">
-                {userInitials}
+              <div className="w-8 h-8 rounded-full bg-white/[0.08] border border-white/10 text-white flex items-center justify-center flex-shrink-0">
+                <CircleUser className="w-4 h-4 text-neutral-300" />
               </div>
             )}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-neutral-200 truncate">
-                {currentUser?.displayName || currentUser?.email || "User"}
+                {displayName}
               </p>
               <p className="text-[10px] text-neutral-500 font-mono truncate">
                 Free plan

@@ -23,6 +23,3 @@ pydantic>=2.0.0
 
 # Firebase Admin SDK — for Auth token verification and Firestore database
 firebase-admin>=6.0.0
-
-# SSE (Server-Sent Events) — for streaming real-time research progress to the frontend
-sse-starlette>=1.6.0

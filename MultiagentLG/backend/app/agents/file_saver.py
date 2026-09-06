@@ -17,6 +17,7 @@ ALSO:
 """
 
 import re
+import uuid
 from pathlib import Path
 
 from app.agents.state import ChatState
@@ -81,7 +82,7 @@ def file_saver(state: ChatState) -> dict:
     output_dir = Path("reports")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_path = output_dir / f"{safe_title}_report.md"
+    output_path = output_dir / f"{safe_title}_{uuid.uuid4().hex[:8]}_report.md"
     output_path.write_text(final_content, encoding="utf-8")
 
     print(f"✅ Report saved to: {output_path}")

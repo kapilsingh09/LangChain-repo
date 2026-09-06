@@ -2,7 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { checkHealth } from "../../services/api";
 
-export const Header = ({ onToggleSidebar, sidebarOpen = false }) => {
+export const Header = ({ 
+  onToggleSidebar, 
+  sidebarOpen = false,
+}) => {
   const [backendOnline, setBackendOnline] = useState(true);
 
   useEffect(() => {
@@ -42,7 +45,7 @@ export const Header = ({ onToggleSidebar, sidebarOpen = false }) => {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3">
         {/* Backend health status badge */}
         <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full glass text-[11px] font-mono">
           <span

@@ -25,7 +25,12 @@ HOW TO REGISTER THESE ROUTES:
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies.auth import get_current_user
-from app.services.firestore import get_research_history, get_research_by_id
+from app.services.firestore import (
+    get_research_history,
+    get_research_by_id,
+    delete_research,
+    delete_all_research,
+)
 
 
 # Create a router — main.py will register this with the /research prefix
@@ -82,6 +87,39 @@ async def get_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch research history. Please try again.",
+        )
+
+
+# ── DELETE /research/history ──────────────────────────────────────────────────
+
+@router.delete(
+    "/history",
+    summary="Clear All Research History",
+    description=(
+        "Deletes all past research runs for the authenticated user. "
+        "Requires a valid Firebase ID token in the Authorization header."
+    ),
+    tags=["Research History"],
+)
+async def clear_all_history(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Delete all research documents for the current user."""
+    uid = current_user["uid"]
+
+    try:
+        deleted_count = delete_all_research(uid=uid)
+        return {
+            "status": "ok",
+            "message": f"Successfully cleared {deleted_count} research records.",
+            "deleted_count": deleted_count,
+        }
+
+    except Exception as e:
+        print(f"❌ Error clearing history for user {uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear research history. Please try again.",
         )
 
 
@@ -149,3 +187,43 @@ async def get_single_research(
         )
 
     return research
+
+
+# ── DELETE /research/{research_id} ────────────────────────────────────────────
+
+@router.delete(
+    "/{research_id}",
+    summary="Delete a Single Research Result",
+    description=(
+        "Deletes a specific research document. Only the owner can delete it. "
+        "Returns 404 if not found or if it belongs to another user."
+    ),
+    tags=["Research History"],
+)
+async def delete_single_research(
+    research_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Delete a specific research document for the authenticated user."""
+    uid = current_user["uid"]
+
+    try:
+        deleted = delete_research(uid=uid, research_id=research_id)
+    except Exception as e:
+        print(f"❌ Error deleting research {research_id} for user {uid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete research. Please try again.",
+        )
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Research not found.",
+        )
+
+    return {
+        "status": "ok",
+        "message": "Research deleted successfully.",
+        "research_id": research_id,
+    }

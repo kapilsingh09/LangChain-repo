@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -52,6 +52,40 @@ export const getResearchById = async (id, token) => {
     return res.data;
   } catch (err) {
     console.error(`Fetch research ${id} error:`, err);
+    throw err;
+  }
+};
+
+/**
+ * Delete a specific research run by ID
+ */
+export const deleteResearch = async (id, token) => {
+  try {
+    const res = await apiClient.delete(`/research/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return res.data;
+  } catch (err) {
+    console.error(`Delete research ${id} error:`, err);
+    throw err;
+  }
+};
+
+/**
+ * Clear all research history for the authenticated user
+ */
+export const clearAllResearch = async (token) => {
+  try {
+    const res = await apiClient.delete("/research/history", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return res.data;
+  } catch (err) {
+    console.error("Clear research history error:", err);
     throw err;
   }
 };

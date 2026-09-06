@@ -49,9 +49,9 @@ export const ReportActions = ({
         )}
 
         {critiqueScore && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-white/10 text-white border border-white/20">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
             <Shield className="w-3.5 h-3.5" />
-            Rigor: {critiqueScore}
+            Quality: {critiqueScore}
           </span>
         )}
       </div>

@@ -22,6 +22,8 @@ IMAGE RULES:
   - No decorative images.
 """
 
+import re
+import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import List
@@ -177,30 +179,40 @@ def generate_and_place_images(state: ImageSubgraphState) -> dict:
         return {"final_report": md}
 
     # Create the images directory if it doesn't exist
-    images_dir = Path("images")
+    images_dir = Path("images").resolve()
     images_dir.mkdir(parents=True, exist_ok=True)
 
     for spec in image_specs:
         placeholder = spec["placeholder"]
-        filename = spec["filename"]
-        out_path = images_dir / filename
+        raw_name = Path(spec.get("filename", "")).name
+        # Sanitize filename: alphanumeric, underscores, hyphens only
+        base_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", raw_name.rsplit(".", 1)[0]).strip("_")
+        if not base_name:
+            base_name = f"diag_{uuid.uuid4().hex[:8]}"
+        safe_filename = f"{base_name}.png"
+
+        out_path = (images_dir / safe_filename).resolve()
+        # Enforce security invariant: out_path must stay strictly within images_dir
+        if not str(out_path).startswith(str(images_dir)):
+            print(f"⚠️ Security warning: rejected path traversal in image filename: {raw_name}")
+            continue
 
         try:
-            # Only generate if the file doesn't already exist (avoids re-generation on retries)
+            # Only generate if the file doesn't already exist
             if not out_path.exists():
                 image_bytes = _generate_image_bytes(spec["prompt"])
                 out_path.write_bytes(image_bytes)
 
-            # Replace the [[IMAGE_N]] placeholder with a real markdown image tag
+            # Replace the [[IMAGE_N]] placeholder with a real markdown image tag pointing to /images/
             image_markdown = (
-                f"![{spec['alt']}](images/{filename})\n\n"
-                f"*{spec['caption']}*"
+                f"![{spec.get('alt', 'Technical Diagram')}](/images/{safe_filename})\n\n"
+                f"*{spec.get('caption', '')}*"
             )
             md = md.replace(placeholder, image_markdown)
 
         except Exception as e:
             # If generation fails, insert a visible warning instead of crashing
-            print(f"⚠️  Image generation failed for {filename}: {e}")
+            print(f"⚠️  Image generation failed for {safe_filename}: {e}")
             fallback = (
                 f"\n\n> **Image generation failed**\n"
                 f"> {spec.get('caption', '')}\n"
