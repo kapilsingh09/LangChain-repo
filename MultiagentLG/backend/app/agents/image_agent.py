@@ -125,7 +125,7 @@ def _generate_image_bytes(prompt: str) -> bytes:
 
     image = client.text_to_image(
         prompt=full_prompt,
-        model="Tongyi-MAI/Z-Image-Turbo",
+        model="Qwen/Qwen-Image",
     )
 
     buffer = BytesIO()
