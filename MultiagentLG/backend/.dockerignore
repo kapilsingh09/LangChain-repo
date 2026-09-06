@@ -1,0 +1,57 @@
+# .dockerignore — Files to EXCLUDE from the Docker build context
+#
+# WHY THIS MATTERS:
+#   When you run "docker build", Docker sends all your project files to the
+#   Docker daemon. Files listed here are excluded — making the build:
+#     1. Faster (less data to transfer)
+#     2. Safer (no secrets or unnecessary files in the image)
+#
+# MOST IMPORTANT: .env is excluded so your API keys never end up
+# inside the Docker image (which could be pushed to a registry).
+
+# ── Secrets — NEVER include in Docker image ───────────────────────────────────
+.env
+firebase-service-account.json
+*-service-account.json
+
+# ── Git history — not needed in the container ─────────────────────────────────
+.git
+.gitignore
+
+# ── Python cache — rebuilt inside container anyway ────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# ── Virtual environments — dependencies installed fresh in container ───────────
+.venv/
+venv/
+env/
+
+# ── Development tools ─────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Generated outputs — large files not needed in image ───────────────────────
+reports/
+images/
+
+# ── Jupyter notebooks — dev only ──────────────────────────────────────────────
+notebooks/
+.ipynb_checkpoints/
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Frontend — separate app, not part of the backend image ────────────────────
+frontend/
+
+# ── README — not needed in the container ──────────────────────────────────────
+README.md

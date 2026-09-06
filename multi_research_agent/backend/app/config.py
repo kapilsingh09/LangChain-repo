@@ -33,7 +33,7 @@ class Settings:
     REPORTS_DIR: Path = STORAGE_DIR / "reports"
 
     # Model configurations
-    GOOGLE_MODEL: str = "gemini-2.5-flash"
+    GOOGLE_MODEL: str = "gemini-3.5-flash-lite"
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     IMAGE_MODEL: str = "Qwen/Qwen-Image"
 
