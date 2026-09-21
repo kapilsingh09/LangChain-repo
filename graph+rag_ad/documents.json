@@ -1,0 +1,119 @@
+[
+  {
+    "document_id": "DOC-001",
+    "title": "Architecture Review: Project Aether",
+    "metadata": {
+      "department": "Cloud Engineering",
+      "year": 2026
+    },
+    "content": "Project Aether is a core data service operated by Nexus Corporation. The architecture review records that Alex Mercer, often referenced internally as A. Mercer, is the engineering manager responsible for Aether. The service uses PostgreSQL as its primary relational datastore and Redis for low-latency caching. The team selected PostgreSQL because transactional consistency is important for the service. Redis is used for frequently accessed configuration and session information. Aether is maintained by the Cloud Engineering organization at Nexus. The architecture group describes Aether as the foundation for several downstream services, although this document does not enumerate every dependency. The review also notes that the service exposes internal APIs used by other Nexus teams. During the review, engineers emphasized that the database layer and cache should remain independently scalable. The Seattle Technology Center is the main collaboration location for the Cloud Engineering group. Alex Mercer approved the current architecture after the reliability review."
+  },
+  {
+    "document_id": "DOC-002",
+    "title": "Borealis Service Integration Strategy",
+    "metadata": {
+      "department": "Cloud Engineering",
+      "year": 2026
+    },
+    "content": "Project Borealis is an application service at Nexus Corporation. Priya Sharma, also called P. Sharma or simply Priya in internal notes, works on the Borealis engineering team. Borealis depends on Project Aether for several shared data capabilities rather than maintaining a separate copy of those services. The integration strategy specifies Kubernetes as the deployment platform, with some engineers shortening the name to K8s. Borealis communicates with Aether through internal service APIs. The strategy states that changes to Aether interfaces must be reviewed before Borealis releases are promoted. Borealis is intended to support customer-facing workflows and is designed to scale horizontally. The service also uses FastAPI for selected internal API components. The document focuses on service integration and does not specify the identity provider, cloud vendor, or annual operating budget. Priya participates in integration testing and release validation."
+  },
+  {
+    "document_id": "DOC-003",
+    "title": "FinGlobal Deployment Overview",
+    "metadata": {
+      "customer": "FinGlobal Inc.",
+      "year": 2026
+    },
+    "content": "FinGlobal Inc., frequently shortened to FinGlobal or FG, uses Nexus Corporation services for financial data workflows. Project Borealis serves FinGlobal customer workloads. The deployment overview explains that Borealis consumes shared capabilities from Project Aether. FinGlobal also uses the NexusDataStream product, commonly called DataStream or NDS, for selected streaming and reporting workflows. NexusDataStream is produced by Project Aether. The customer team receives operational notifications from the Borealis service, while DataStream provides event-oriented information used by downstream reporting systems. The document does not identify a cloud provider for either service. It also does not state employee compensation or individual customer contracts. FinGlobal's technical contacts coordinate release windows with the Nexus platform teams. The deployment is designed so that customer-specific workloads remain isolated from internal engineering environments."
+  },
+  {
+    "document_id": "DOC-004",
+    "title": "Q3 Cloud Engineering Department Update",
+    "metadata": {
+      "department": "Cloud Engineering",
+      "year": 2026
+    },
+    "content": "The Cloud Engineering department, abbreviated as Cloud Eng or CE, belongs to Nexus Corporation, also known in older material as NexusCorp. The department is based at the Seattle Technology Center, sometimes called the Seattle Hub or SEA-1. Alex Mercer belongs to Cloud Engineering and leads the technical work around Project Aether. Ethan Brooks is also part of Cloud Engineering and contributes to Project Borealis. The department update records that Project Aether produces the NexusDataStream product, known internally as DataStream or NDS. Cloud Engineering is responsible for platform reliability and service operations. The update mentions that several engineers rotate between application and infrastructure duties. It does not contain salary information or detailed customer contract terms. Seattle remains the primary location for the group's platform meetings and architecture reviews."
+  },
+  {
+    "document_id": "DOC-005",
+    "title": "Internal Technology Stack Audit",
+    "metadata": {
+      "department": "Cloud Engineering",
+      "year": 2026
+    },
+    "content": "The internal technology audit lists PostgreSQL and Kubernetes among the technologies maintained by Cloud Engineering. PostgreSQL is also called Postgres or PG, while Kubernetes is commonly shortened to K8s or Kube. The department maintains these platforms for multiple internal services. The audit confirms that Project Aether uses PostgreSQL and that Project Borealis uses Kubernetes. Engineers note that database maintenance and container platform maintenance are handled by separate operational rotations. The audit references Alex Mercer for architecture approvals but does not assign personal ownership of every technology. Cloud Engineering also maintains operational documentation for service deployment and incident response. The report intentionally excludes employee compensation data and does not identify the cloud provider used for each workload."
+  },
+  {
+    "document_id": "DOC-006",
+    "title": "Data Platforms Organization and Operations",
+    "metadata": {
+      "department": "Data Platforms",
+      "year": 2026
+    },
+    "content": "Data Platforms is an engineering department within Nexus Corporation and operates from the Austin Engineering Office, also referred to as Austin Office or AUS-1. Priya Sharma belongs to Data Platforms and contributes to Project Borealis as well as cross-team data initiatives. Daniel Kim is another Data Platforms engineer and manages Project Cygnus. The department maintains Apache Kafka, usually called Kafka, for event streaming and PostgreSQL for analytical storage. The organization provides shared data infrastructure used by several Nexus projects. The report describes Kafka maintenance as a team responsibility rather than assigning it to one employee. It does not provide individual salaries or identify a specific cloud provider. Austin is the main location for the department's engineering operations and data-platform planning sessions."
+  },
+  {
+    "document_id": "DOC-007",
+    "title": "Cygnus Analytics Architecture",
+    "metadata": {
+      "project": "Project Cygnus",
+      "year": 2026
+    },
+    "content": "Project Cygnus is an analytics platform managed by Daniel Kim of Nexus Corporation. Daniel Kim belongs to the Data Platforms department. Cygnus uses Apache Kafka for ingesting event streams and PostgreSQL for storing analytical datasets. The platform is designed to transform operational events into datasets consumed by internal analytics applications. The architecture team selected Kafka because multiple producers can publish events independently. PostgreSQL provides relational querying for downstream analysis. Cygnus produces the NexusRiskEngine product, also called the Risk Engine or NRE, which is used by Mercury Health. The architecture document describes Mercury Health as a customer of Nexus Corporation. It does not specify the cloud provider or Daniel Kim's compensation."
+  },
+  {
+    "document_id": "DOC-008",
+    "title": "Borealis API Operations Runbook",
+    "metadata": {
+      "project": "Project Borealis",
+      "year": 2026
+    },
+    "content": "The Borealis operations runbook records that Ethan Brooks contributes to Project Borealis from the Cloud Engineering team. Borealis runs on Kubernetes and uses FastAPI for several API endpoints. The service depends on Project Aether for shared data capabilities. Operational procedures include deployment validation, API health checks, and rollback testing. The runbook notes that FastAPI components are packaged into containers managed by Kubernetes. Priya Sharma also participates in Borealis integration work, although the runbook is focused on operational procedures rather than team structure. The document does not identify the cloud vendor, customer pricing, or employee salaries. Engineers use the short name Kube when discussing the Kubernetes cluster in incident channels."
+  },
+  {
+    "document_id": "DOC-009",
+    "title": "Delta Shield Security Project",
+    "metadata": {
+      "project": "Project Delta",
+      "year": 2026
+    },
+    "content": "Project Delta, also known as Delta Shield, is a security-oriented project at Nexus Corporation. Maria Lopez belongs to the Security Engineering department and works on Delta. The project uses Kubernetes for isolated service workloads and depends on Project Borealis for selected application integration capabilities. Delta supports workflows for Atlas Logistics, a Nexus customer. Security Engineering coordinates access reviews and deployment controls for the project. The project team uses standardized container policies and reviews changes before production rollout. The document does not provide a cloud provider name or employee compensation details. Maria Lopez is the primary engineering contact mentioned for the Delta workstream."
+  },
+  {
+    "document_id": "DOC-010",
+    "title": "Security Engineering Organization Report",
+    "metadata": {
+      "department": "Security Engineering",
+      "year": 2026
+    },
+    "content": "Security Engineering is a department of Nexus Corporation and operates from the New York Operations Center, also called NY Operations or the NYC Hub. Maria Lopez belongs to Security Engineering and contributes to Project Delta. The department maintains Kubernetes security controls and container-policy tooling used across Nexus services. Security Engineering reviews deployment permissions and production access for multiple projects. The report identifies the New York Operations Center as the department's primary working location. It does not state individual salaries, cloud-provider contracts, or customer pricing. The team works closely with Cloud Engineering when platform-level security changes affect Kubernetes workloads."
+  },
+  {
+    "document_id": "DOC-011",
+    "title": "Aether Cross-Team Collaboration Notes",
+    "metadata": {
+      "project": "Project Aether",
+      "year": 2026
+    },
+    "content": "The Aether collaboration notes describe cross-team work between Cloud Engineering and Data Platforms. Priya Sharma from Data Platforms contributes to Project Aether in addition to her work on Project Borealis. Alex Mercer remains the engineering manager for Aether. The notes describe Aether as a shared platform that provides data capabilities to Borealis and other internal services. PostgreSQL remains the primary relational database and Redis is used for selected low-latency workloads. The document does not define employee compensation or the infrastructure vendor. The collaboration model allows engineers from different departments to contribute without changing project management ownership."
+  },
+  {
+    "document_id": "DOC-012",
+    "title": "Cygnus Risk Product Brief",
+    "metadata": {
+      "product": "NexusRiskEngine",
+      "year": 2026
+    },
+    "content": "Project Cygnus produces NexusRiskEngine, abbreviated as NRE or called the Risk Engine by customer teams. Mercury Health uses the product for selected risk-analysis workflows. Daniel Kim manages Cygnus and coordinates the engineering roadmap. Cygnus uses Apache Kafka and PostgreSQL as core technologies. The product brief explains that event streams are transformed into analytical records before being evaluated by the risk service. Mercury Health receives product updates through the Nexus customer operations team. The brief does not disclose cloud-provider information or employee salaries."
+  },
+  {
+    "document_id": "DOC-013",
+    "title": "Atlas Logistics Delta Integration",
+    "metadata": {
+      "customer": "Atlas Logistics",
+      "year": 2026
+    },
+    "content": "Atlas Logistics uses Project Delta, also known as Delta Shield, for selected security and integration workflows. Maria Lopez works on Delta from the Security Engineering organization. Delta depends on Project Borealis for application-facing integration capabilities. The customer deployment uses Kubernetes-based services and standardized security policies. Atlas Logistics coordinates maintenance windows with Nexus Corporation. The document does not identify a cloud provider, individual compensation, or customer contract value. The integration team treats Delta and Borealis as separate services connected through controlled interfaces."
+  }
+]
