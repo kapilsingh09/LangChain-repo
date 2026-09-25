@@ -8,9 +8,6 @@ so the developer knows exactly what to fix.
 
 import os
 from dotenv import load_dotenv
-
-# Load variables from the .env file into the environment.
-# This must happen BEFORE we try to read os.getenv().
 load_dotenv()
 
 
