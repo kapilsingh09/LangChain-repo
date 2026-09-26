@@ -1,16 +1,24 @@
-from .vector_store import create_vector_store   
+from langchain_community.vectorstores import FAISS
+from langchain_core.vectorstores import VectorStoreRetriever
 
-from ingestion.transcript import chunks
-from .embedding import embedding_model
+from app.rag.vector_store import create_vector_store
+from app.rag.embedding import embedding_model
+from app.ingestion.transcript import build_chunks
 
-retriever = create_vector_store(chunks, embedding_model).as_retriever(search_kwargs={"k": 3})
+# In-memory cache: video_id -> retriever
+# This avoids rebuilding FAISS on every single message for the same video
+_retriever_cache: dict[str, VectorStoreRetriever] = {}
 
-if __name__ == "__main__":
-    query = "What is discussed about neural networks?"
 
-    results = retriever.invoke(query, k=3)
-
-    for doc in results:
-        print(doc.page_content)
-        print(doc.metadata)
-        print("---")
+def get_retriever(video_id: str) -> VectorStoreRetriever:
+    """
+    Return a retriever for the given YouTube video_id.
+    Builds the vector store on first call and caches it.
+    """
+    if video_id not in _retriever_cache:
+        print(f"[Retriever] Building vector store for video: {video_id}")
+        chunks = build_chunks(video_id)
+        vector_store = create_vector_store(chunks, embedding_model)
+        _retriever_cache[video_id] = vector_store.as_retriever(search_kwargs={"k": 3})
+        print(f"[Retriever] Vector store ready — {len(chunks)} chunks indexed.")
+    return _retriever_cache[video_id]

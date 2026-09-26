@@ -1,24 +1,51 @@
-
 from pydantic import BaseModel, Field
 from typing import Literal
-
-from langgraph_ragchatbot_yt.app.rag import retriever
-from llm.models import groq_llm,google_llm
-from graph.state import GraphState
-from tavily import TavilyClient
 import os
+
+from app.rag.retriever import get_retriever
+from app.llm.models import groq_llm, google_llm
+from app.graph.state import GraphState
+from tavily import TavilyClient
+from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate
+
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
+
+
+def normalize_text(value):
+    """Convert model outputs into a plain string regardless of whether the SDK returns a string, list, or dict."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            text = normalize_text(item)
+            if text:
+                parts.append(text)
+        return " ".join(parts).strip()
+    if isinstance(value, dict):
+        for key in ("text", "content"):
+            if key in value:
+                return normalize_text(value[key])
+        return str(value).strip()
+    return str(value).strip()
+
+
+# ──────────────────────────────────────────────
+# ROUTER
+# ──────────────────────────────────────────────
 
 class RouteDecision(BaseModel):
     decision_route: Literal["chat", "go_for_rag"]
 
 router_llm = groq_llm.with_structured_output(RouteDecision)
 
-def make_decision_route(state: GraphState):
 
-    question = state["messages"][-1].content
+def make_decision_route(state: GraphState):
 
     prompt = f"""
 You are a routing agent for a YouTube RAG chatbot.
@@ -67,19 +94,10 @@ Examples:
 "Explain what the video says about LLMs."
 → go_for_rag
 
-"What examples of self-supervised learning were mentioned?"
-→ go_for_rag
-
-"Why is self-supervised learning useful?"
-→ go_for_rag
-
 "Can you summarize this video?"
 → go_for_rag
 
 "What did the speaker say about transformers?"
-→ go_for_rag
-
-"If the video discusses RAG, explain how it works."
 → go_for_rag
 
 ### Important:
@@ -102,7 +120,7 @@ go_for_rag
 
     response = groq_llm.invoke(prompt)
 
-    decision = response.content.strip().lower()
+    decision = normalize_text(response.content).lower()
 
     if decision not in ["chat", "go_for_rag"]:
         decision = "go_for_rag"
@@ -110,9 +128,13 @@ go_for_rag
     return {"decision_route": decision}
 
 
+# ──────────────────────────────────────────────
+# CHAT
+# ──────────────────────────────────────────────
+
 def chat_node(state: GraphState):
 
-    response = google_llm.invoke(
+    response = groq_llm.invoke(
         state["messages"]
     )
 
@@ -120,6 +142,10 @@ def chat_node(state: GraphState):
         "messages": [response]
     }
 
+
+# ──────────────────────────────────────────────
+# GRADER
+# ──────────────────────────────────────────────
 
 class ContextGrade(BaseModel):
 
@@ -153,6 +179,7 @@ class ContextGrade(BaseModel):
 
 
 grader_llm = google_llm.with_structured_output(ContextGrade)
+
 
 def grade_documents(state: GraphState):
 
@@ -238,6 +265,10 @@ Retrieved YouTube Context:
     }
 
 
+# ──────────────────────────────────────────────
+# REWRITE QUERY
+# ──────────────────────────────────────────────
+
 rewrite_prompt = """
 You are a query rewriting agent for a YouTube RAG system.
 
@@ -275,28 +306,38 @@ def rewrite_query_node(state: GraphState):
 
     response = google_llm.invoke(prompt)
 
-    rewritten_query = response.content.strip()
+    rewritten_query = normalize_text(response.content)
 
     return {
         "rewritten_query": rewritten_query,
         "retry_count": state.get("retry_count", 0) + 1
     }
 
+
+# ──────────────────────────────────────────────
+# RETRIEVE  (uses video_id from state)
+# ──────────────────────────────────────────────
+
 def retrieve_node(state: GraphState):
+
+    video_id = state.get("video_id", "")
 
     if state.get("rewritten_query"):
         query = state["rewritten_query"]
     else:
         query = state["messages"][-1].content
 
+    retriever = get_retriever(video_id)
     documents = retriever.invoke(query)
 
     return {
         "documents": documents
     }
 
-from langchain_core.tools import tool
 
+# ──────────────────────────────────────────────
+# WEB SEARCH
+# ──────────────────────────────────────────────
 
 @tool
 def tavily_search(query: str):
@@ -313,6 +354,7 @@ def tavily_search(query: str):
 
     return response["results"]
 
+
 def web_search_node(state: GraphState):
 
     question = state["messages"][-1].content
@@ -322,6 +364,11 @@ def web_search_node(state: GraphState):
     return {
         "web_results": results
     }
+
+
+# ──────────────────────────────────────────────
+# CONTEXT FUSION
+# ──────────────────────────────────────────────
 
 def context_fusion_node(state: GraphState):
 
@@ -354,8 +401,10 @@ Content:
         "context": final_context
     }
 
-from langchain_core.prompts import ChatPromptTemplate
 
+# ──────────────────────────────────────────────
+# GENERATE
+# ──────────────────────────────────────────────
 
 generate_prompt = ChatPromptTemplate.from_template("""
 You are an AI assistant answering questions about a YouTube video.
@@ -404,6 +453,11 @@ def generate_node(state: GraphState):
         "messages": [response]
     }
 
+
+# ──────────────────────────────────────────────
+# RESET STATE
+# ──────────────────────────────────────────────
+
 def reset_request_state(state: GraphState):
     return {
         "retry_count": 0,
@@ -413,4 +467,3 @@ def reset_request_state(state: GraphState):
         "documents": [],
         "grade": {},
     }
-
