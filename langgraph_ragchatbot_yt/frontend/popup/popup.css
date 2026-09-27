@@ -145,7 +145,7 @@ body {
 
 /* ═══════════════════════════════════════════════════════
    Loading / thinking indicator
-   ═══════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════ */
 .loading {
   align-self: flex-start;
   display: flex;
@@ -159,6 +159,49 @@ body {
   border: 1px solid #303030;
   border-radius: 14px 14px 14px 4px;
   animation: msgIn 0.2s ease-out;
+}
+
+.skeleton-message {
+  width: min(220px, 72%);
+  align-self: flex-start;
+  background: #1e1e1e;
+  border: 1px solid #303030;
+  border-radius: 14px 14px 14px 4px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  overflow: hidden;
+  position: relative;
+  animation: msgIn 0.2s ease-out;
+}
+
+.skeleton-message::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.08) 35%, rgba(255,255,255,0.16) 50%, rgba(255,255,255,0.08) 65%, rgba(255,255,255,0) 100%);
+  animation: shimmer 1.2s infinite;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #272727 0%, #313131 40%, #272727 100%);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-line.short {
+  width: 42%;
+}
+
+.skeleton-line.medium {
+  width: 72%;
+}
+
+.skeleton-line.long {
+  width: 92%;
 }
 
 .spinner {
@@ -189,6 +232,15 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
 }
 
 /* ═══════════════════════════════════════════════════════

@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Literal
+import logging
 import os
+import time
 
 from app.rag.retriever import get_retriever
 from app.llm.models import groq_llm, google_llm
@@ -8,10 +10,16 @@ from app.graph.state import GraphState
 from tavily import TavilyClient
 from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import AIMessage, SystemMessage
 
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
+logger = logging.getLogger(__name__)
+
+# Minimum number of retrieved documents to consider retrieval "good enough"
+# to skip the grader and go directly to generation.
+MIN_DOCS_FOR_FAST_PATH = 2
 
 
 def normalize_text(value):
@@ -35,6 +43,22 @@ def normalize_text(value):
     return str(value).strip()
 
 
+def stream_text(value):
+    """Extract streamed text without stripping token-boundary whitespace."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(stream_text(item) for item in value)
+    if isinstance(value, dict):
+        if "text" in value:
+            return stream_text(value["text"])
+        if "content" in value:
+            return stream_text(value["content"])
+    return str(value)
+
+
 # ──────────────────────────────────────────────
 # ROUTER
 # ──────────────────────────────────────────────
@@ -46,6 +70,7 @@ router_llm = groq_llm.with_structured_output(RouteDecision)
 
 
 def make_decision_route(state: GraphState):
+    logger.info("Graph node triggered: router")
 
     prompt = f"""
 You are a routing agent for a YouTube RAG chatbot.
@@ -132,10 +157,22 @@ go_for_rag
 # CHAT
 # ──────────────────────────────────────────────
 
-def chat_node(state: GraphState):
+from langchain_core.runnables import RunnableConfig
 
-    response = groq_llm.invoke(
-        state["messages"]
+def response_llm(config: RunnableConfig):
+    provider = (config.get("configurable") or {}).get("model", "gemini")
+    return groq_llm if provider == "groq" else google_llm
+
+
+def chat_node(state: GraphState, config: RunnableConfig):
+    logger.info("Graph node triggered: chat")
+
+    response = response_llm(config).invoke(
+        [
+            SystemMessage(content="Reply in the same language as the user's latest message."),
+            *state["messages"],
+        ],
+        config=config,
     )
 
     return {
@@ -182,6 +219,7 @@ grader_llm = google_llm.with_structured_output(ContextGrade)
 
 
 def grade_documents(state: GraphState):
+    logger.info("Graph node triggered: grader")
 
     question = state["messages"][-1].content
 
@@ -289,6 +327,7 @@ Previous retrieved context:
 
 
 def rewrite_query_node(state: GraphState):
+    logger.info("Graph node triggered: rewrite_query")
 
     question = state["messages"][-1].content
 
@@ -319,6 +358,7 @@ def rewrite_query_node(state: GraphState):
 # ──────────────────────────────────────────────
 
 def retrieve_node(state: GraphState):
+    logger.info("Graph node triggered: retriever")
 
     video_id = state.get("video_id", "")
 
@@ -327,12 +367,45 @@ def retrieve_node(state: GraphState):
     else:
         query = state["messages"][-1].content
 
+    t0 = time.time()
     retriever = get_retriever(video_id)
     documents = retriever.invoke(query)
+    elapsed = time.time() - t0
+
+    print(f"[Graph] Retrieval completed in {elapsed:.2f}s — {len(documents)} docs returned")
 
     return {
         "documents": documents
     }
+
+
+# ──────────────────────────────────────────────
+# SHOULD GRADE  (fast-path decision node)
+# ──────────────────────────────────────────────
+
+def should_grade_node(state: GraphState):
+    """
+    Decide whether the grader is needed.
+
+    Fast path: If retrieval returned enough documents AND this is
+    the first attempt (no prior rewrite), skip the grader entirely
+    and go straight to generate.
+
+    Recovery path: If retrieval returned few/no documents, or this
+    is a retry after rewrite, run the full grader for quality control.
+    """
+    logger.info("Graph node triggered: should_grade")
+    documents = state.get("documents", [])
+    retry_count = state.get("retry_count", 0)
+
+    # Fast path: good retrieval on first attempt
+    if len(documents) >= MIN_DOCS_FOR_FAST_PATH and retry_count == 0:
+        print(f"[Graph] Fast path: {len(documents)} docs retrieved, skipping grader")
+        return {"skip_grader": True}
+
+    # Recovery path: need grader to decide next action
+    print(f"[Graph] Recovery path: {len(documents)} docs, retry={retry_count}, running grader")
+    return {"skip_grader": False}
 
 
 # ──────────────────────────────────────────────
@@ -356,6 +429,7 @@ def tavily_search(query: str):
 
 
 def web_search_node(state: GraphState):
+    logger.info("Graph node triggered: web_search")
 
     question = state["messages"][-1].content
 
@@ -371,6 +445,7 @@ def web_search_node(state: GraphState):
 # ──────────────────────────────────────────────
 
 def context_fusion_node(state: GraphState):
+    logger.info("Graph node triggered: context_fusion")
 
     youtube_context = "\n\n".join(
         doc.page_content
@@ -418,6 +493,7 @@ Rules:
 - Clearly distinguish information from the YouTube transcript and web sources when useful.
 - If the available context does not contain enough information, say so honestly.
 - Keep the answer clear and relevant.
+- Reply in the same language as the user's question, whether it is Hindi, English, or another language.
 
 Context:
 {context}
@@ -427,7 +503,8 @@ Question:
 """)
 
 
-def generate_node(state: GraphState):
+def generate_node(state: GraphState, config: RunnableConfig):
+    logger.info("Graph node triggered: generate")
 
     question = state["messages"][-1].content
 
@@ -442,12 +519,24 @@ def generate_node(state: GraphState):
             for doc in state.get("documents", [])
         )
 
-    chain = generate_prompt | google_llm
+    print(f"[Graph] Generation started")
 
-    response = chain.invoke({
+    # Groq is used for the user-facing stream because it avoids Gemini's
+    # exhausted free-tier generation quota and returns the first token faster.
+    chain = generate_prompt | response_llm(config)
+
+    # Use the native model stream so LangGraph's messages stream can forward
+    # tokens to the API while the final message is still stored in state.
+    response_parts = []
+    for chunk in chain.stream({
         "context": context,
         "question": question
-    })
+    }, config=config):
+        content = stream_text(chunk.content)
+        if content:
+            response_parts.append(content)
+
+    response = AIMessage(content="".join(response_parts))
 
     return {
         "messages": [response]
@@ -459,6 +548,7 @@ def generate_node(state: GraphState):
 # ──────────────────────────────────────────────
 
 def reset_request_state(state: GraphState):
+    logger.info("Graph node triggered: reset_request_state")
     return {
         "retry_count": 0,
         "rewritten_query": "",
@@ -466,4 +556,5 @@ def reset_request_state(state: GraphState):
         "web_results": [],
         "documents": [],
         "grade": {},
+        "skip_grader": False,
     }

@@ -12,6 +12,8 @@ let sessionId = null;
 let isBannerVisible = true;
 let isModelPillVisible = true;
 let currentActiveBotMessageDiv = null;
+let isSending = false;
+let streamFinished = false;
 
 // DOM Elements
 const videoTitleEl = document.getElementById('video-title');
@@ -95,8 +97,12 @@ function loadState(videoId) {
         }
 
         // Restore selected model only
-        if (result.selectedModel) {
+        if (['gemini', 'groq'].includes(result.selectedModel)) {
             modelSelect.value = result.selectedModel;
+        } else {
+            modelSelect.value = 'gemini';
+        }
+        if (modelSelect.value) {
             updateActiveModelText();
         }
 
@@ -145,9 +151,8 @@ function loadState(videoId) {
 }
 
 function updateActiveModelText() {
-    let modelName = "Free Model";
-    if (modelSelect.value === 'gemini') modelName = "Gemini";
-    if (modelSelect.value === 'grok') modelName = "Grok";
+    let modelName = "Gemini";
+    if (modelSelect.value === 'groq') modelName = "Groq";
     activeModelText.textContent = modelName;
 }
 
@@ -261,15 +266,31 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
     // Chat History updated (either user asked a question, or bot finished)
     if (changes.chatHistory) {
-        renderChatHistory(changes.chatHistory.newValue);
+        const history = changes.chatHistory.newValue || [];
+        const lastMessage = history[history.length - 1];
+
+        // The final answer is already visible in the live stream bubble.
+        // Update that bubble instead of rendering a second copy from history.
+        if (
+            lastMessage?.sender === 'bot' &&
+            currentActiveBotMessageDiv &&
+            !currentActiveBotMessageDiv.classList.contains('skeleton-message')
+        ) {
+            currentActiveBotMessageDiv.textContent = lastMessage.text;
+            currentActiveBotMessageDiv = null;
+            streamFinished = true;
+            scrollToBottom();
+        } else {
+            renderChatHistory(history);
+        }
     }
 
     // Streaming updates
-    if (changes.currentStream) {
+    if (changes.currentStream && !streamFinished) {
         const streamText = changes.currentStream.newValue;
         if (streamText) {
             // Replace thinking indicator with actual text bubble if it's the first chunk
-            if (!currentActiveBotMessageDiv || currentActiveBotMessageDiv.classList.contains('loading')) {
+            if (!currentActiveBotMessageDiv || currentActiveBotMessageDiv.classList.contains('skeleton-message')) {
                 if (currentActiveBotMessageDiv) currentActiveBotMessageDiv.remove();
                 currentActiveBotMessageDiv = document.createElement('div');
                 currentActiveBotMessageDiv.classList.add('message', 'bot-message');
@@ -287,10 +308,13 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         
         if (isGen) {
             // Just started, show thinking indicator
+            streamFinished = false;
             if (currentActiveBotMessageDiv) currentActiveBotMessageDiv.remove();
             currentActiveBotMessageDiv = addLoadingIndicator();
         } else {
             // Finished generating
+            streamFinished = true;
+            if (currentActiveBotMessageDiv) currentActiveBotMessageDiv.remove();
             currentActiveBotMessageDiv = null;
         }
     }
@@ -308,16 +332,23 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 function handleAskQuestion() {
     const question = questionInput.value.trim();
 
-    if (!question || !currentVideoInfo) return;
+    if (!question || !currentVideoInfo || isSending) return;
 
+    isSending = true;
+    askBtn.disabled = true;
+    questionInput.placeholder = 'Waiting for response…';
     questionInput.value = '';
+
+    if (currentActiveBotMessageDiv) currentActiveBotMessageDiv.remove();
+    currentActiveBotMessageDiv = addLoadingIndicator();
 
     chrome.runtime.sendMessage({
         type: "ASK_QUESTION",
         payload: {
             youtube_url: currentVideoInfo.url,
             question: question,
-            session_id: sessionId
+            session_id: sessionId,
+            model: modelSelect.value
         }
     });
 }
@@ -342,29 +373,37 @@ function renderChatHistory(historyArr) {
     historyArr.forEach(msg => {
         renderMessage(msg.sender, msg.text);
     });
+
+    if (currentActiveBotMessageDiv) {
+        chatHistoryEl.appendChild(currentActiveBotMessageDiv);
+        scrollToBottom();
+    }
 }
 
 function addLoadingIndicator() {
-    const loadingDiv = document.createElement('div');
-    loadingDiv.classList.add('loading');
-    
-    const spinner = document.createElement('div');
-    spinner.classList.add('spinner');
-    
-    const text = document.createElement('span');
-    text.textContent = "Thinking...";
-    
-    loadingDiv.appendChild(spinner);
-    loadingDiv.appendChild(text);
-    
-    chatHistoryEl.appendChild(loadingDiv);
+    const skeleton = document.createElement('div');
+    skeleton.classList.add('skeleton-message');
+
+    const line1 = document.createElement('div');
+    line1.classList.add('skeleton-line', 'long');
+    const line2 = document.createElement('div');
+    line2.classList.add('skeleton-line', 'medium');
+    const line3 = document.createElement('div');
+    line3.classList.add('skeleton-line', 'short');
+
+    skeleton.appendChild(line1);
+    skeleton.appendChild(line2);
+    skeleton.appendChild(line3);
+
+    chatHistoryEl.appendChild(skeleton);
     scrollToBottom();
-    return loadingDiv;
+    return skeleton;
 }
 
 function setLoadingState(isLoading) {
-    questionInput.disabled = isLoading;
     askBtn.disabled = isLoading;
+    isSending = isLoading;
+    questionInput.placeholder = isLoading ? 'Waiting for response…' : 'Ask about this video…';
     if (!isLoading) {
         questionInput.focus();
     }

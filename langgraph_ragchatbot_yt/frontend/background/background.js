@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleStreamingRequest(payload) {
     try {
-        // 1. Initialize state
+        // 1. Initialize state first so popup can show the loader immediately
         await chrome.storage.local.set({
             isGenerating: true,
             currentStream: "",

@@ -57,10 +57,10 @@ youtube-rag-extension/
 
 1. Navigate to your FastAPI project folder.
 2. Ensure you have the required dependencies (`fastapi`, `langchain`, `youtube-transcript-api`, etc.).
-3. Add your `HF_API_KEY` in `main.py`.
-4. Run the backend locally:
+3. Configure `GOOGLE_API_KEY` and `GROQ_API_KEY` in `app/.env`. Add `TAVILY_API_KEY` there if you use web search. Do not put API keys in source code or the extension.
+4. From the workspace root, run the backend locally. Scoping `--reload-dir` prevents unrelated workspace folders from restarting the server:
    ```bash
-   uvicorn main:app --reload
+   uvicorn app.main:app --app-dir ./langgraph_ragchatbot_yt --reload --reload-dir ./langgraph_ragchatbot_yt --host 0.0.0.0 --port 8000
    ```
 5. The backend will start on `http://localhost:8000`.
 
@@ -74,7 +74,7 @@ const API_BASE_URL = "https://your-production-url.com";
 ## How the RAG Pipeline Works
 
 1. User opens a YouTube video and asks a question in the extension.
-2. The extension sends `{ session_id, question, youtube_url }` to the FastAPI backend.
+2. The extension sends `{ session_id, question, youtube_url, model }` to the FastAPI backend.
 3. The backend extracts the video ID and fetches the auto-generated transcript using `youtube-transcript-api`.
 4. The transcript is split into smaller, overlapping chunks using LangChain text splitters.
 5. Chunks are embedded and stored in a temporary FAISS vector database.

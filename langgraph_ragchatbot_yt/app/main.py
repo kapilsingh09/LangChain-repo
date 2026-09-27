@@ -1,5 +1,5 @@
-# ```python
 import time
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 import uvicorn
@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Literal
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 
@@ -39,7 +40,7 @@ class AskRequest(BaseModel):
     youtube_url: str
     question: str
     session_id: str
-    model: str | None = None
+    model: Literal["gemini", "groq"] = "gemini"
     api_key: str | None = None
 
 
@@ -94,7 +95,7 @@ async def ask(request: AskRequest):
         "youtube_url": "https://www.youtube.com/watch?v=...",
         "question": "...",
         "session_id": "sess_...",
-        "model": "free",
+        "model": "gemini",
         "api_key": ""
     }
 
@@ -115,7 +116,8 @@ async def ask(request: AskRequest):
 
     config = {
         "configurable": {
-            "thread_id": request.session_id
+            "thread_id": request.session_id,
+            "model": request.model,
         }
     }
 
@@ -136,66 +138,45 @@ async def ask(request: AskRequest):
     # Generate response
     # ──────────────────────────────────────────
 
-    def generate():
+    async def generate():
         try:
+            start_time = time.time()
+            first_token_received = False
 
-            # stream_mode="values"
-            # gives the complete state after every node
-            for chunk in chatbot.stream(
+            # stream_mode="messages" streams LLM message chunks as they are generated
+            async for event in chatbot.astream(
                 initial_state,
                 config=config,
-                stream_mode="values"
+                stream_mode="messages"
             ):
+                chunk, metadata = event
 
-                messages = chunk.get("messages", [])
+                # Check if this chunk is from the final generation node (or chat node)
+                # and contains actual content
+                if metadata.get("langgraph_node") in ["generate", "chat"]:
+                    content = chunk.content
 
-                if not messages:
-                    continue
+                    if content:
+                        if not first_token_received:
+                            first_token_received = True
+                            elapsed = time.time() - start_time
+                            print(f"[LLM] First token received after {elapsed:.2f}s")
 
-                last = messages[-1]
+                        # Handle strings safely
+                        if isinstance(content, str):
+                            yield content
 
-
-                # Ignore user's HumanMessage
-                if isinstance(last, HumanMessage):
-                    continue
-
-
-                if not hasattr(last, "content"):
-                    continue
-
-
-                content = last.content
-
-
-                # ──────────────────────────────
-                # Case 1: normal string response
-                # ──────────────────────────────
-
-                if isinstance(content, str):
-                    yield content
-
-
-                # ──────────────────────────────
-                # Case 2: Gemini structured content
-                # ──────────────────────────────
-
-                elif isinstance(content, list):
-
-                    for item in content:
-
-                        if isinstance(item, dict):
-
-                            text = item.get("text")
-
-                            if text:
-                                yield text
-
-                        elif isinstance(item, str):
-                            yield item
-
+                        # Handle structured content safely
+                        elif isinstance(content, list):
+                            for item in content:
+                                if isinstance(item, dict):
+                                    text = item.get("text")
+                                    if text:
+                                        yield text
+                                elif isinstance(item, str):
+                                    yield item
 
         except Exception as e:
-
             yield f"\n\n[ERROR]: {str(e)}"
 
 
@@ -219,41 +200,6 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
+        reload_dirs=[str(Path(__file__).resolve().parents[1])],
     )
-# ```
-
-# The key fix is this part:
-
-# ```python
-# content = last.content
-
-# if isinstance(content, str):
-#     yield content
-
-# elif isinstance(content, list):
-#     for item in content:
-#         if isinstance(item, dict):
-#             text = item.get("text")
-#             if text:
-#                 yield text
-# ```
-
-# Now `StreamingResponse` will receive **strings**, not a list, so the:
-
-# ```text
-# AttributeError: 'list' object has no attribute 'encode'
-# ```
-
-# error should be gone.
-
-# Also, your duplicate:
-
-# ```python
-# model
-# api_key
-# model
-# api_key
-# ```
-
-# has been fixed.

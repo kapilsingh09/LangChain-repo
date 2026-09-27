@@ -1,3 +1,5 @@
+import time
+
 from langchain_community.vectorstores import FAISS
 from langchain_core.vectorstores import VectorStoreRetriever
 
@@ -15,10 +17,20 @@ def get_retriever(video_id: str) -> VectorStoreRetriever:
     Return a retriever for the given YouTube video_id.
     Builds the vector store on first call and caches it.
     """
-    if video_id not in _retriever_cache:
-        print(f"[Retriever] Building vector store for video: {video_id}")
-        chunks = build_chunks(video_id)
-        vector_store = create_vector_store(chunks, embedding_model)
-        _retriever_cache[video_id] = vector_store.as_retriever(search_kwargs={"k": 3})
-        print(f"[Retriever] Vector store ready — {len(chunks)} chunks indexed.")
+    if video_id in _retriever_cache:
+        print(f"[Retriever] Cache HIT: {video_id}")
+        return _retriever_cache[video_id]
+
+    print(f"[Retriever] Cache MISS: {video_id}")
+    print(f"[Retriever] Building vector store...")
+
+    t0 = time.time()
+
+    chunks = build_chunks(video_id)
+    vector_store = create_vector_store(chunks, embedding_model)
+    _retriever_cache[video_id] = vector_store.as_retriever(search_kwargs={"k": 3})
+
+    elapsed = time.time() - t0
+    print(f"[Retriever] Vector store ready in {elapsed:.2f}s — {len(chunks)} chunks indexed.")
+
     return _retriever_cache[video_id]

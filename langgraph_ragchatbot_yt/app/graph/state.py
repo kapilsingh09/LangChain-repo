@@ -25,3 +25,6 @@ class GraphState(TypedDict):
     rewritten_query: str
 
     retry_count: int
+
+    # Fast-path flag: skip the grader when retrieval looks sufficient
+    skip_grader: bool
