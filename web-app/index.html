@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121719">
+  <title>YouTube Copilot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="YouTube Copilot home">
+        <img src="assets/copilot-logo.svg" alt="" width="38" height="38">
+        <span>YouTube <strong>Copilot</strong></span>
+      </a>
+      <div class="topbar-status">
+        <span id="backend-indicator" class="status-dot" aria-hidden="true"></span>
+        <span id="backend-status" role="status">Checking backend</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="source-panel" aria-label="Video and connection settings">
+        <div class="section-heading">
+          <span class="eyebrow">01 / SOURCE</span>
+          <span class="heading-rule"></span>
+        </div>
+
+        <form id="video-form" class="video-form">
+          <label for="youtube-url">YouTube video</label>
+          <div class="url-control">
+            <input id="youtube-url" name="youtube_url" type="url" inputmode="url"
+              placeholder="Paste a video link" autocomplete="url" required>
+            <button class="icon-button load-button" type="submit" title="Load video" aria-label="Load video">↵</button>
+          </div>
+          <p class="field-hint">youtube.com, youtu.be, Shorts, or live link</p>
+        </form>
+
+        <section id="video-card" class="video-card" aria-live="polite">
+          <div class="thumbnail-frame">
+            <img id="video-thumbnail" alt="" hidden>
+            <span id="thumbnail-placeholder" class="thumbnail-placeholder">YT</span>
+            <span id="video-state" class="video-state">NO VIDEO</span>
+          </div>
+          <div class="video-meta">
+            <span class="eyebrow">CURRENT VIDEO</span>
+            <p id="video-title" class="video-title">Add a YouTube link to begin</p>
+            <a id="open-video" class="video-link" href="#" target="_blank" rel="noreferrer" hidden>Open on YouTube <span aria-hidden="true">↗</span></a>
+          </div>
+        </section>
+
+        <div class="section-heading settings-heading">
+          <span class="eyebrow">02 / PREFERENCES</span>
+          <span class="heading-rule"></span>
+        </div>
+
+        <label class="control-label" for="model-select">Response model</label>
+        <select id="model-select" class="select-control">
+          <option value="groq">Groq · Faster</option>
+          <option value="gemini">Gemini</option>
+        </select>
+
+        <label class="control-label api-label" for="api-url">Backend address</label>
+        <div class="api-control">
+          <input id="api-url" type="url" value="http://localhost:8000" spellcheck="false" aria-label="Backend address">
+          <button id="check-backend" class="text-button" type="button">Check</button>
+        </div>
+
+        <div class="source-footer">
+          <span class="footer-mark" aria-hidden="true">●</span>
+          <span>Answers stream from your local RAG backend.</span>
+        </div>
+      </aside>
+
+      <section class="chat-panel" aria-label="Video chat">
+        <div class="chat-header">
+          <div>
+            <span class="eyebrow">VIDEO RESEARCH</span>
+            <h1>Ask the video.</h1>
+          </div>
+          <button id="reset-chat" class="text-button reset-button" type="button" title="Start a fresh conversation">
+            <span aria-hidden="true">↺</span> New chat
+          </button>
+        </div>
+
+        <div id="chat-history" class="chat-history" aria-live="polite" aria-relevant="additions text">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-glyph" aria-hidden="true">✳</div>
+            <p class="empty-title">A better way to follow along.</p>
+            <p class="empty-copy">Load a video, then ask about its ideas, examples, or key takeaways.</p>
+            <div class="prompt-list" aria-label="Example questions">
+              <button type="button" class="prompt-button" data-prompt="Summarize the main ideas in this video">Summarize the main ideas <span>↗</span></button>
+              <button type="button" class="prompt-button" data-prompt="What are the most important examples?">Find the important examples <span>↗</span></button>
+              <button type="button" class="prompt-button" data-prompt="Explain the hardest concept in simple terms">Explain a difficult concept <span>↗</span></button>
+            </div>
+          </div>
+        </div>
+
+        <form id="question-form" class="composer">
+          <label class="sr-only" for="question-input">Ask a question about the video</label>
+          <textarea id="question-input" rows="1" placeholder="Ask a question about this video..." disabled required></textarea>
+          <div class="composer-bottom">
+            <span class="composer-note"><span class="note-dot"></span> Grounded in video context</span>
+            <button id="send-button" class="send-button" type="submit" disabled>
+              <span id="send-label">Send</span><span class="send-arrow" aria-hidden="true">↑</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="app.js" defer></script>
+</body>
+</html>

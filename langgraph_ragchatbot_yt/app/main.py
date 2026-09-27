@@ -40,7 +40,7 @@ class AskRequest(BaseModel):
     youtube_url: str
     question: str
     session_id: str
-    model: Literal["gemini", "groq"] = "gemini"
+    model: Literal["gemini", "groq"] = "groq"
     api_key: str | None = None
 
 
@@ -95,7 +95,7 @@ async def ask(request: AskRequest):
         "youtube_url": "https://www.youtube.com/watch?v=...",
         "question": "...",
         "session_id": "sess_...",
-        "model": "gemini",
+        "model": "groq",
         "api_key": ""
     }
 

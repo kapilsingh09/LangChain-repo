@@ -160,7 +160,7 @@ go_for_rag
 from langchain_core.runnables import RunnableConfig
 
 def response_llm(config: RunnableConfig):
-    provider = (config.get("configurable") or {}).get("model", "gemini")
+    provider = (config.get("configurable") or {}).get("model", "groq")
     return groq_llm if provider == "groq" else google_llm
 
 

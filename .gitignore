@@ -7,6 +7,7 @@ __pycache__/
 
 # C extensions
 *.so
+.vscode
 
 # Distribution / packaging
 .Python
@@ -120,7 +121,7 @@ celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
-
+.vscode/
 # Environments
 .env
 .venv
@@ -129,7 +130,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+mcp.json
 # Spyder project settings
 .spyderproject
 .spyproject

@@ -100,7 +100,7 @@ function loadState(videoId) {
         if (['gemini', 'groq'].includes(result.selectedModel)) {
             modelSelect.value = result.selectedModel;
         } else {
-            modelSelect.value = 'gemini';
+            modelSelect.value = 'groq';
         }
         if (modelSelect.value) {
             updateActiveModelText();
@@ -151,7 +151,7 @@ function loadState(videoId) {
 }
 
 function updateActiveModelText() {
-    let modelName = "Gemini";
+    let modelName = "Groq";
     if (modelSelect.value === 'groq') modelName = "Groq";
     activeModelText.textContent = modelName;
 }
