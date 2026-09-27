@@ -7,6 +7,9 @@
 /* ── Base ── */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  width: min(440px, 100vw);
+  height: 600px;
+  min-width: 350px;
 }
 
 ::selection {
@@ -80,51 +83,197 @@ body {
    Chat messages — Kaggle notebook-cell style
    ═══════════════════════════════════════════════════════ */
 .message {
-  max-width: 85%;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 94%;
   font-size: 13px;
   line-height: 1.6;
   padding: 10px 14px;
-  word-wrap: break-word;
-  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   animation: msgIn 0.2s ease-out;
 }
 
-/* Monospace role tag via ::before */
+/* Role icon via ::before */
 .message::before {
   display: block;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-bottom: 5px;
+  font-family: 'Font Awesome 6 Free';
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 7px;
 }
 
 /* ── User bubble ── */
 .user-message {
   align-self: flex-end;
-  background: #20BEFF;
-  color: #ffffff;
+  max-width: 98%;
+  padding: 7px 12px;
+  background: #17384b;
+  border: 1px solid #285a73;
+  color: #edf8ff;
   border-radius: 14px 14px 4px 14px;
-}
-
-.user-message::before {
-  content: 'YOU';
-  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 /* ── AI bubble ── */
 .bot-message {
   align-self: flex-start;
-  background: #1e1e1e;
-  border: 1px solid #303030;
-  color: #e0e0e0;
+  width: fit-content;
+  background: #1c302e;
+  border: 1px solid #31524d;
+  color: #e2eeeb;
   border-radius: 14px 14px 14px 4px;
 }
 
+.bot-message > :first-child {
+  margin-top: 0;
+}
+
+.bot-message > :last-child {
+  margin-bottom: 0;
+}
+
+.bot-message p {
+  margin: 0 0 0.85em;
+  line-height: 1.7;
+}
+
+.bot-message h1,
+.bot-message h2,
+.bot-message h3,
+.bot-message h4,
+.bot-message h5,
+.bot-message h6 {
+  color: #f3f3f3;
+  line-height: 1.35;
+  margin: 1.1em 0 0.5em;
+}
+
+.bot-message h1 { font-size: 1.35em; }
+.bot-message h2 { font-size: 1.2em; }
+.bot-message h3 { font-size: 1.08em; }
+.bot-message h4,
+.bot-message h5,
+.bot-message h6 { font-size: 1em; }
+
+.bot-message ul,
+.bot-message ol {
+  margin: 0.55em 0 0.9em;
+  padding-left: 1.5em;
+}
+
+.bot-message li {
+  padding-left: 0.15em;
+  margin: 0.3em 0;
+}
+
+.bot-message blockquote {
+  margin: 0.8em 0;
+  padding: 0.1em 0 0.1em 0.85em;
+  border-left: 3px solid #20BEFF;
+  color: #aaa;
+}
+
+.bot-message blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.bot-message a {
+  color: #66cfff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.inline-code {
+  padding: 0.1em 0.35em;
+  border: 1px solid #383838;
+  border-radius: 4px;
+  background: #111;
+  color: #f0bd79;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.bot-message hr {
+  border: 0;
+  border-top: 1px solid #383838;
+  margin: 1em 0;
+}
+
+.code-block {
+  width: 100%;
+  min-width: 0;
+  margin: 0.85em 0;
+  overflow: hidden;
+  border: 1px solid #383838;
+  border-radius: 8px;
+  background: #111;
+}
+
+.code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 9px;
+  border-bottom: 1px solid #303030;
+  background: #181818;
+}
+
+.code-language {
+  color: #aaa;
+  font: 10px 'JetBrains Mono', monospace;
+  text-transform: lowercase;
+}
+
+.copy-code-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 5px;
+  border: 0;
+  background: transparent;
+  color: #aaa;
+  font: 10px 'Inter', sans-serif;
+  cursor: pointer;
+}
+
+.copy-code-button:hover,
+.copy-code-button:focus-visible {
+  color: #fff;
+}
+
+.copy-code-button:focus-visible {
+  outline: 2px solid #20BEFF;
+  outline-offset: 2px;
+}
+
+.code-block pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 11px 12px;
+  overflow-x: auto;
+  color: #d8d8d8;
+  font: 11px/1.6 'JetBrains Mono', monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.code-content {
+  font: inherit;
+}
+
+.syntax-keyword { color: #c792ea; }
+.syntax-string { color: #c3e88d; }
+.syntax-number { color: #f78c6c; }
+.syntax-comment { color: #737d8b; font-style: italic; }
+.syntax-punctuation { color: #89ddff; }
+
 .bot-message::before {
-  content: 'YT CHAT';
-  color: #666;
+  content: '\f544';
+  color: #66d8bd;
 }
 
 /* ── Error bubble ── */
@@ -211,6 +360,22 @@ body {
   border-top-color: #20BEFF;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+#question-input {
+  min-width: 0;
+  max-height: 96px;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.45;
+}
+
+#ask-btn.is-generating i {
+  animation: spin 0.8s linear infinite;
+}
+
+#chat-history {
+  min-height: 0;
 }
 
 /* ═══════════════════════════════════════════════════════
