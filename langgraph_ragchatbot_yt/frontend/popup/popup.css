@@ -10,6 +10,44 @@ body {
   width: min(440px, 100vw);
   height: 600px;
   min-width: 350px;
+  background: #101010 !important;
+  color: #fff;
+}
+
+body > header,
+#model-pill,
+#video-banner,
+#model-select,
+#setup-container,
+#input-container,
+#video-thumbnail {
+  background: #151515 !important;
+}
+
+#input-wrapper {
+  background: transparent !important;
+}
+
+#active-model-text,
+#video-banner span,
+#setup-container label,
+#setup-container .model-settings-note,
+#question-input::placeholder {
+  color: #fff;
+}
+
+#setup-container .model-settings-note,
+#model-select option {
+  background: #151515 !important;
+  color: #fff;
+}
+
+#input-container,
+#input-container:focus-within {
+  background: #151515 !important;
+  border: 0 !important;
+  border-radius: 9999px;
+  box-shadow: none !important;
 }
 
 ::selection {
@@ -18,13 +56,18 @@ body {
 }
 
 /* ── Scrollbar ── */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #444 transparent;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 3px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 4px;
+  background: #444;
+  border-radius: 999px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -33,6 +76,13 @@ body {
 
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
+  margin-block: 12px;
+}
+
+#chat-history {
+  margin-right: -0.875rem;
+  padding-right: 1rem;
+  scrollbar-gutter: stable;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -50,21 +100,13 @@ body {
   gap: 12px;
 }
 
-.empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: #1e1e1e;
-  border: 1px solid #303030;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-}
-
-.empty-icon i {
+.empty-state h2 {
+  margin: 0;
+  color: #f2f5f4;
   font-size: 18px;
-  color: #20BEFF;
+  font-weight: 600;
+  line-height: 1.35;
+  text-shadow: none;
 }
 
 .empty-state p {
@@ -74,9 +116,22 @@ body {
   color: #999;
 }
 
-.empty-state span {
-  font-size: 11px;
-  color: #555;
+body.welcome-mode #chat-history {
+  justify-content: center;
+  padding-bottom: 12px;
+}
+
+body.welcome-mode .empty-state {
+  flex: 0 0 auto;
+}
+
+body.welcome-mode #input-wrapper {
+  position: static;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding-top: 0;
+  padding-bottom: 0;
+  background: transparent !important;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -107,9 +162,9 @@ body {
   align-self: flex-end;
   max-width: 98%;
   padding: 7px 12px;
-  background: #17384b;
-  border: 1px solid #285a73;
-  color: #edf8ff;
+  background: #181818;
+  border: 1px solid #383838;
+  color: #fff;
   border-radius: 14px 14px 4px 14px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -119,9 +174,9 @@ body {
 .bot-message {
   align-self: flex-start;
   width: fit-content;
-  background: #1c302e;
-  border: 1px solid #31524d;
-  color: #e2eeeb;
+  background: #151515;
+  border: 1px solid #383838;
+  color: #fff;
   border-radius: 14px 14px 14px 4px;
 }
 
@@ -189,7 +244,7 @@ body {
   padding: 0.1em 0.35em;
   border: 1px solid #383838;
   border-radius: 4px;
-  background: #111;
+  background: #151515;
   color: #f0bd79;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.9em;
@@ -209,7 +264,7 @@ body {
   overflow: hidden;
   border: 1px solid #383838;
   border-radius: 8px;
-  background: #111;
+  background: #151515;
 }
 
 .code-toolbar {
@@ -223,7 +278,7 @@ body {
 }
 
 .code-language {
-  color: #aaa;
+  color: #fff;
   font: 10px 'JetBrains Mono', monospace;
   text-transform: lowercase;
 }
@@ -235,7 +290,7 @@ body {
   padding: 4px 5px;
   border: 0;
   background: transparent;
-  color: #aaa;
+  color: #fff;
   font: 10px 'Inter', sans-serif;
   cursor: pointer;
 }
@@ -255,7 +310,7 @@ body {
   margin: 0;
   padding: 11px 12px;
   overflow-x: auto;
-  color: #d8d8d8;
+  color: #fff;
   font: 11px/1.6 'JetBrains Mono', monospace;
   tab-size: 2;
   white-space: pre;
@@ -281,7 +336,7 @@ body {
   align-self: center;
   width: 100%;
   text-align: center;
-  background: #2a1a1a;
+  background: #181818;
   border: 1px solid #402020;
   border-radius: 10px;
   color: #ff5252;
@@ -304,7 +359,7 @@ body {
   font-size: 12px;
   font-family: 'JetBrains Mono', monospace;
   color: #888;
-  background: #1e1e1e;
+  background: #151515;
   border: 1px solid #303030;
   border-radius: 14px 14px 14px 4px;
   animation: msgIn 0.2s ease-out;
@@ -313,7 +368,7 @@ body {
 .skeleton-message {
   width: min(220px, 72%);
   align-self: flex-start;
-  background: #1e1e1e;
+  background: #151515;
   border: 1px solid #303030;
   border-radius: 14px 14px 14px 4px;
   padding: 12px 14px;

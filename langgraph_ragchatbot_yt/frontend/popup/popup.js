@@ -5,6 +5,18 @@ function generateSessionId() {
 
 // Configuration
 const API_BASE_URL = "http://localhost:8000";
+const WELCOME_GREETINGS = [
+    'Hello there! ✨',
+    'Ready when you are 🚀',
+    "Let's make today count 🌱",
+    'Curious? Let’s explore 🔎',
+    'You’ve got this.. 💪',
+    'Let’s dive in. 🔎',
+    'Big ideas start here..💡',
+    'One question at a time 🌿',
+    'Let’s make it count ⚡',
+    'Bring your curiosity 🌟'
+];
 
 // State
 let currentVideoInfo = null;
@@ -15,11 +27,13 @@ let currentActiveBotMessageDiv = null;
 let isSending = false;
 let streamFinished = false;
 let currentRequestId = null;
+let activeWelcomeGreeting = null;
 
 // DOM Elements
 const videoTitleEl = document.getElementById('video-title');
 const videoThumbnailEl = document.getElementById('video-thumbnail');
 const chatHistoryEl = document.getElementById('chat-history');
+const inputWrapper = document.getElementById('input-wrapper');
 const questionInput = document.getElementById('question-input');
 const askBtn = document.getElementById('ask-btn');
 const resetBtn = document.getElementById('reset-btn');
@@ -71,11 +85,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } else {
             videoTitleEl.textContent = "Status: Invalid YouTube URL";
-            renderMessage("bot", "Could not detect video ID from URL.", true);
+            renderWelcomeState(false);
         }
     } else {
         videoTitleEl.textContent = "Status: Not on a YouTube video";
-        renderMessage("bot", "Please open a YouTube video first to use YouTube RAG.", true);
+        renderWelcomeState(false);
     }
 });
 
@@ -113,7 +127,14 @@ function loadState(videoId) {
         if (result.videoId === videoId && result.sessionId) {
             sessionId = result.sessionId;
             currentRequestId = result.currentRequestId || null;
-            const history = result.chatHistory || [];
+            const history = (result.chatHistory || []).filter((message, index) => !(
+                index === 0 &&
+                message.sender === 'bot' &&
+                message.text === "Hello! I'm ready to answer questions about this video. What would you like to know?"
+            ));
+            if (history.length !== (result.chatHistory || []).length) {
+                chrome.storage.local.set({ chatHistory: history });
+            }
             renderChatHistory(history);
             
             // Resume stream if currently generating
@@ -138,25 +159,22 @@ function loadState(videoId) {
         } else {
             // New video or no history, start fresh
             sessionId = generateSessionId();
-            const initMsg = [{ sender: 'bot', text: "Hello! I'm ready to answer questions about this video. What would you like to know?" }];
             chrome.storage.local.set({ 
                 videoId: videoId, 
                 sessionId: sessionId, 
-                chatHistory: initMsg,
+                chatHistory: [],
                 isGenerating: false,
                 currentStream: "",
                 currentRequestId: null,
                 currentError: null
             });
-            renderChatHistory(initMsg);
+            renderWelcomeState(true);
         }
     });
 }
 
 function updateActiveModelText() {
-    let modelName = "Groq";
-    if (modelSelect.value === 'groq') modelName = "Groq";
-    activeModelText.textContent = modelName;
+    activeModelText.textContent = modelSelect.value === 'gemini' ? 'Gemini' : 'Groq';
 }
 
 function updateSettingsUI() {
@@ -250,16 +268,15 @@ questionInput.addEventListener('input', () => {
 
 resetBtn.addEventListener('click', () => {
     sessionId = generateSessionId();
-    const initMsg = [{ sender: 'bot', text: "Conversation reset. What would you like to know?" }];
     chrome.storage.local.set({ 
         sessionId: sessionId, 
-        chatHistory: initMsg,
+        chatHistory: [],
         isGenerating: false,
         currentStream: "",
         currentRequestId: null,
         currentError: null
     });
-    renderChatHistory(initMsg);
+    renderWelcomeState(Boolean(currentVideoInfo));
 });
 
 modelSelect.addEventListener('change', updateSettingsUI);
@@ -351,6 +368,7 @@ function handleAskQuestion() {
 
     if (!question || !currentVideoInfo || isSending) return;
 
+    clearWelcomeState();
     currentRequestId = generateSessionId();
     setLoadingState(true);
     questionInput.placeholder = 'Waiting for response…';
@@ -387,8 +405,7 @@ function cancelGeneration() {
 // --- DOM Render Functions ---
 
 function renderMessage(sender, text, isError = false) {
-    const emptyState = chatHistoryEl.querySelector('.empty-state');
-    if (emptyState) emptyState.remove();
+    clearWelcomeState();
 
     const msgDiv = document.createElement('div');
     if (isError) {
@@ -412,10 +429,46 @@ function renderChatHistory(historyArr) {
         renderMessage(msg.sender, msg.text);
     });
 
+    if (!historyArr.length && !currentActiveBotMessageDiv) {
+        renderWelcomeState(Boolean(currentVideoInfo));
+    }
+
     if (currentActiveBotMessageDiv) {
         chatHistoryEl.appendChild(currentActiveBotMessageDiv);
         scrollToBottom();
     }
+}
+
+function renderWelcomeState(hasVideo) {
+    chatHistoryEl.replaceChildren();
+
+    const welcome = document.createElement('div');
+    welcome.className = 'empty-state';
+
+    const heading = document.createElement('h2');
+    if (hasVideo && !activeWelcomeGreeting) {
+        activeWelcomeGreeting = WELCOME_GREETINGS[Math.floor(Math.random() * WELCOME_GREETINGS.length)];
+    }
+    heading.textContent = hasVideo ? activeWelcomeGreeting : 'Open a YouTube video to get started';
+
+    welcome.appendChild(heading);
+    if (!hasVideo) {
+        const description = document.createElement('p');
+        description.textContent = 'Then ask me anything about it.';
+        welcome.appendChild(description);
+    }
+    chatHistoryEl.append(welcome, inputWrapper);
+    document.body.classList.add('welcome-mode');
+}
+
+function clearWelcomeState() {
+    const welcome = chatHistoryEl.querySelector('.empty-state');
+    if (!welcome) return;
+
+    welcome.remove();
+    document.body.classList.remove('welcome-mode');
+    document.body.insertBefore(inputWrapper, document.querySelector('script'));
+    activeWelcomeGreeting = null;
 }
 
 function addLoadingIndicator() {

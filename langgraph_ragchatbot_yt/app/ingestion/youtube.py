@@ -3,50 +3,83 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
 def fetch_transcript(video_id: str):
     """
-    Fetch an English or Hindi transcript when available, otherwise use the
-    video's first available transcript language.
+    Priority:
+    1. English manual transcript
+    2. English generated transcript
+    3. Hindi transcript
+    4. Any other available transcript
     """
+
     try:
         ytt_api = YouTubeTranscriptApi()
-        transcripts = ytt_api.list(video_id)
-        available_transcripts = list(transcripts)
+        transcripts = list(ytt_api.list(video_id))
 
-        english_transcript = next(
+        if not transcripts:
+            raise RuntimeError(
+                f"No transcript tracks are available for video '{video_id}'."
+            )
+
+        # 1. English manual transcript
+        transcript = next(
             (
-                item for item in available_transcripts
-                if item.language_code.lower().startswith("en")
-                and not item.is_generated
+                t for t in transcripts
+                if t.language_code.lower().startswith("en")
+                and not t.is_generated
             ),
-            None,
-        ) or next(
-            (
-                item for item in available_transcripts
-                if item.language_code.lower().startswith("en")
-            ),
-            None,
-        )
-        hindi_transcript = next(
-            (
-                item for item in available_transcripts
-                if item.language_code.lower().startswith("hi")
-            ),
-            None,
-        )
-        transcript = (
-            english_transcript
-            or hindi_transcript
-            or next(iter(available_transcripts), None)
+            None
         )
 
+        # 2. English generated transcript
         if transcript is None:
-            raise RuntimeError(f"No transcript tracks are available for video '{video_id}'.")
+            transcript = next(
+                (
+                    t for t in transcripts
+                    if t.language_code.lower().startswith("en")
+                ),
+                None
+            )
+
+        # 3. Hindi transcript
+        if transcript is None:
+            transcript = next(
+                (
+                    t for t in transcripts
+                    if t.language_code.lower().startswith("hi")
+                ),
+                None
+            )
+
+        # 4. Any other available language
+        if transcript is None:
+            transcript = transcripts[0]
 
         print(
-            f"[Transcript] Using {transcript.language_code} transcript "
+            f"[Transcript] Using {transcript.language_code} "
             f"(generated={transcript.is_generated}) for {video_id}"
         )
+
         return transcript.fetch()
+
     except TranscriptsDisabled as e:
-        raise RuntimeError(f"Transcripts are disabled for video '{video_id}': {e}")
+        raise RuntimeError(
+            "Transcripts are disabled for this video, so I can't access its transcript. "
+            "Please try another YouTube video with captions enabled."
+        ) from e
+
     except Exception as e:
-        raise RuntimeError(f"Failed to fetch transcript for video '{video_id}': {e}")
+        raise RuntimeError(
+            f"Failed to fetch transcript for video '{video_id}': {e}"
+        )
+
+
+# code behaviour 
+
+# Available transcripts
+#         │
+#         ├── English manual? ──→ YES → USE IT
+#         │
+#         ├── English generated? → YES → USE IT
+#         │
+#         ├── Hindi? ────────────→ YES → USE IT
+#         │
+#         └── Anything else? ───→ YES → USE IT
