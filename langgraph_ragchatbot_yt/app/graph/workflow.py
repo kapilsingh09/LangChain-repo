@@ -11,6 +11,9 @@ from .nodes import (
     chat_node,
     web_search_node,
     should_grade_node,
+    video_summary_node,
+    summary_response_node,
+    detailed_summary_node,
 )
 from .edges import route_question, grade_route
 
@@ -18,6 +21,9 @@ g = StateGraph(GraphState)
 g.add_node("reset_request_state", reset_request_state)
 g.add_node("router", make_decision_route)
 g.add_node("chat", chat_node)
+g.add_node("video_summary", video_summary_node)
+g.add_node("summary_response", summary_response_node)
+g.add_node("detailed_summary", detailed_summary_node)
 
 g.add_node("retriever", retrieve_node)
 g.add_node("should_grade", should_grade_node)
@@ -39,12 +45,30 @@ g.add_edge("reset_request_state", "router")
 g.add_conditional_edges(
     "router", route_question,
     {"chat": "chat",
-    "go_for_rag": "retriever"
+    "rag": "retriever",
+    "summary": "video_summary",
+    "web_search": "web_search",
     }
 )
 
 #if the chat ->ended here  
 g.add_edge("chat", END)
+
+def route_summary(state: GraphState):
+    if state.get("detailed_summary") and state.get("video_summary"):
+        return "detailed_summary"
+    return "summary_response"
+
+g.add_conditional_edges(
+    "video_summary",
+    route_summary,
+    {
+        "summary_response": "summary_response",
+        "detailed_summary": "detailed_summary",
+    },
+)
+g.add_edge("summary_response", END)
+g.add_edge("detailed_summary", END)
 
 # After retrieval, decide if we need the grader or can fast-path to generate
 g.add_edge("retriever", "should_grade")

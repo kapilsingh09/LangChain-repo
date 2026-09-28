@@ -10,13 +10,25 @@ class GraphState(TypedDict):
     # The YouTube video ID — set at the start of each request
     video_id: str
 
-    decision_route: Literal["chat", "go_for_rag"]
+    decision_route: Literal["chat", "rag", "summary", "web_search"]
+
+    video_title: str
+
+    detailed_summary: bool
+
+    video_summary: str
+
+    summary_error: str
+
+    summary_answer: str
 
     documents: list[Document]
 
     grade: dict
 
     web_search_needed: bool
+
+    web_search_error: str
 
     web_results: list[dict]
 

@@ -1,3 +1,4 @@
+import asyncio
 import time
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from typing import Literal
 from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
+from app.cache import prepare_video_cache
 
 load_dotenv()
 
@@ -38,6 +40,7 @@ app.add_middleware(
 
 class AskRequest(BaseModel):
     youtube_url: str
+    video_title: str | None = None
     question: str
     session_id: str
     model: Literal["gemini", "groq"] = "groq"
@@ -108,6 +111,11 @@ async def ask(request: AskRequest):
     # ──────────────────────────────────────────
 
     video_id = extract_video_id(request.youtube_url)
+    video_title = await asyncio.to_thread(
+        prepare_video_cache,
+        video_id,
+        request.video_title,
+    )
 
 
     # ──────────────────────────────────────────
@@ -131,6 +139,7 @@ async def ask(request: AskRequest):
             HumanMessage(content=request.question)
         ],
         "video_id": video_id,
+        "video_title": video_title,
     }
 
 
@@ -142,18 +151,41 @@ async def ask(request: AskRequest):
         try:
             start_time = time.time()
             first_token_received = False
+            answer_streamed = False
 
-            # stream_mode="messages" streams LLM message chunks as they are generated
-            async for event in chatbot.astream(
+            # Stream LLM tokens and the non-streamed stored-summary response.
+            async for mode, event in chatbot.astream(
                 initial_state,
                 config=config,
-                stream_mode="messages"
+                stream_mode=["messages", "updates"]
             ):
+                if mode == "updates":
+                    if "web_search" in event:
+                        yield "\u001eWEB_SEARCH_USED\u001e"
+                    if "retriever" in event:
+                        yield "\u001eRAG_USED\u001e"
+
+                    summary_update = event.get("summary_response", {})
+                    summary_answer = summary_update.get("summary_answer")
+                    if summary_answer:
+                        yield summary_answer
+                    if not answer_streamed:
+                        for node_name in ("generate", "chat", "detailed_summary"):
+                            node_update = event.get(node_name, {})
+                            messages = node_update.get("messages", [])
+                            if messages:
+                                answer = messages[-1].content
+                                if isinstance(answer, str) and answer:
+                                    yield answer
+                                    answer_streamed = True
+                                    break
+                    continue
+
                 chunk, metadata = event
 
                 # Check if this chunk is from the final generation node (or chat node)
                 # and contains actual content
-                if metadata.get("langgraph_node") in ["generate", "chat"]:
+                if metadata.get("langgraph_node") in ["generate", "chat", "detailed_summary"]:
                     content = chunk.content
 
                     if content:
@@ -164,6 +196,7 @@ async def ask(request: AskRequest):
 
                         # Handle strings safely
                         if isinstance(content, str):
+                            answer_streamed = True
                             yield content
 
                         # Handle structured content safely
@@ -172,8 +205,10 @@ async def ask(request: AskRequest):
                                 if isinstance(item, dict):
                                     text = item.get("text")
                                     if text:
+                                        answer_streamed = True
                                         yield text
                                 elif isinstance(item, str):
+                                    answer_streamed = True
                                     yield item
 
         except Exception as e:

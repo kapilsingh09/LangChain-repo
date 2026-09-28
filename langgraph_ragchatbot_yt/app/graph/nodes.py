@@ -2,9 +2,11 @@ from pydantic import BaseModel, Field
 from typing import Literal
 import logging
 import os
+import re
 import time
 
 from app.rag.retriever import get_retriever
+from app.ingestion.video_summary import ensure_video_summary
 from app.llm.models import groq_llm, google_llm
 from app.graph.state import GraphState
 from tavily import TavilyClient
@@ -16,11 +18,6 @@ from langchain_core.messages import AIMessage, SystemMessage
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
 logger = logging.getLogger(__name__)
-
-# Minimum number of retrieved documents to consider retrieval "good enough"
-# to skip the grader and go directly to generation.
-MIN_DOCS_FOR_FAST_PATH = 2
-
 
 def normalize_text(value):
     """Convert model outputs into a plain string regardless of whether the SDK returns a string, list, or dict."""
@@ -64,23 +61,44 @@ def stream_text(value):
 # ──────────────────────────────────────────────
 
 class RouteDecision(BaseModel):
-    decision_route: Literal["chat", "go_for_rag"]
+    decision_route: Literal["chat", "rag", "summary", "web_search"]
+    detailed_summary: bool = Field(
+        default=False,
+        description="True only when a whole-video summary requests a specific focus, examples, timestamps, evidence, or extra detail.",
+    )
 
 router_llm = groq_llm.with_structured_output(RouteDecision)
 
 
+def is_casual_message(message: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s']", "", message.lower()).strip()
+    casual_messages = {
+        "hi", "hii", "hello", "helo", "hallo", "hey", "heyy", "hello there", "hi there",
+        "good morning", "good afternoon", "good evening", "how are you", "how are you doing",
+        "thanks", "thank you", "thank you so much", "ok", "okay", "bye", "goodbye",
+        "what can you do",
+    }
+    return normalized in casual_messages
+
+
 def make_decision_route(state: GraphState):
     logger.info("Graph node triggered: router")
+    user_message = state["messages"][-1].content
+
+    if isinstance(user_message, str) and is_casual_message(user_message):
+        return {"decision_route": "chat", "detailed_summary": False}
 
     prompt = f"""
 You are a routing agent for a YouTube RAG chatbot.
 
 Your job is to decide whether the user's message should be handled as normal conversation or answered using information from the YouTube video/transcript.
 
-Return ONLY one of these two values:
+Choose exactly one route:
 
 chat
-go_for_rag
+rag
+summary
+web_search
 
 ### Use "chat" when:
 
@@ -96,7 +114,7 @@ Examples:
 * "Bye"
 * "What can you do?"
 
-### Use "go_for_rag" when:
+### Use "rag" when:
 
 The user asks anything that is related to, based on, or could be answered using information from the YouTube video/transcript.
 
@@ -105,52 +123,67 @@ This includes:
 * Asking about a concept or topic explained in the video
 * Asking for an explanation of something discussed in the video
 * Asking what the speaker said or explained
-* Asking for a summary of the video or a part of it
+* Asking for a summary of a specific part of the video
 * Asking about examples mentioned in the video
 * Asking why or how something works when it is discussed in the video
 * Asking about specific people, technologies, ideas, terms, or topics mentioned in the video
 * Asking follow-up questions about something previously discussed from the video
 * Asking questions that require understanding the video's content
 
+### Use "summary" when:
+
+The user wants a whole-video overview, summary, main points, or explanation of the entire video.
+Examples include "Summarize the video", "Give me an overview", "What are the main points?", and "What is this video about?".
+
+Set detailed_summary to true only if the whole-video summary also requests a specific focus, examples, evidence, timestamps, or extra detail. A simple summary request must set it to false.
+
+### Use "web_search" when:
+
+The user explicitly asks to use Tavily, search the web/internet, asks for current or latest information, or asks for external research. This route must be chosen even if the transcript might contain a partial answer.
+
+Examples:
+"Use Tavily to search the web for this."
+"Internet par latest information search karo."
+→ web_search
+
 Examples:
 "What is self-supervised learning?"
-→ go_for_rag
+→ rag
 
 "Explain what the video says about LLMs."
-→ go_for_rag
+→ rag
 
 "Can you summarize this video?"
-→ go_for_rag
+→ summary
 
 "What did the speaker say about transformers?"
-→ go_for_rag
+→ rag
+
+"Search the web for the latest LangGraph release."
+→ web_search
 
 ### Important:
 
-If the question could reasonably require information from the YouTube video, choose "go_for_rag".
+If the user asks about a specific fact or topic from the video, choose "rag".
 
-When you are unsure whether the question is casual conversation or requires video information, choose "go_for_rag".
+When you are unsure whether the question is casual conversation or requires video information, choose "rag".
 
 Do not answer the user's question. Only classify it.
 
 User message:
-{state["messages"][-1].content}
-
-Return ONLY:
-chat
-OR
-go_for_rag
+{user_message}
 
 """
 
-    response = groq_llm.invoke(prompt)
-
-    decision = normalize_text(response.content).lower()
-
-    if decision not in ["chat", "go_for_rag"]:
-        decision = "go_for_rag"
-
-    return {"decision_route": decision}
+    try:
+        response = router_llm.invoke(prompt)
+        return {
+            "decision_route": response.decision_route,
+            "detailed_summary": response.detailed_summary,
+        }
+    except Exception:
+        logger.exception("Router classification failed; using the RAG route")
+        return {"decision_route": "rag", "detailed_summary": False}
 
 
 # ──────────────────────────────────────────────
@@ -215,7 +248,7 @@ class ContextGrade(BaseModel):
     )
 
 
-grader_llm = google_llm.with_structured_output(ContextGrade)
+grader_llm = google_llm.with_structured_output(ContextGrade, method="json_schema")
 
 
 def grade_documents(state: GraphState):
@@ -366,6 +399,29 @@ def retrieve_node(state: GraphState):
         query = state["rewritten_query"]
     else:
         query = state["messages"][-1].content
+        
+        # Optimize complex or hybrid queries for FAISS semantic search
+        if len(query.split()) > 8:
+            try:
+                from app.llm.models import groq_llm
+                optimization_prompt = f"""You are a search query optimizer.
+Extract ONLY the core topic, entities, and keywords from the user's question for a vector database search against a video transcript.
+Ignore conversational filler (e.g., "According to this video", "what does it say").
+Ignore questions about time or external context (e.g., "what has changed since publication", "search the web").
+Return ONLY the essential keywords separated by spaces.
+
+Question: {query}
+Keywords:"""
+                response = groq_llm.invoke(optimization_prompt)
+                from app.graph.nodes import normalize_text
+                optimized = normalize_text(response.content)
+                if optimized and len(optimized) > 2:
+                    print(f"[Graph] Original query: {query}")
+                    print(f"[Graph] Optimized FAISS query: {optimized}")
+                    query = optimized
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Query optimization failed: {e}")
 
     t0 = time.time()
     retriever = get_retriever(video_id)
@@ -379,32 +435,68 @@ def retrieve_node(state: GraphState):
     }
 
 
+def video_summary_node(state: GraphState):
+    logger.info("Graph node triggered: video_summary")
+    try:
+        summary = ensure_video_summary(state.get("video_id", ""))
+        return {"video_summary": summary, "summary_error": ""}
+    except Exception as error:
+        logger.exception("Could not retrieve or generate the video summary")
+        return {"video_summary": "", "summary_error": str(error)}
+
+
+def summary_response_node(state: GraphState):
+    summary = state.get("video_summary", "")
+    if summary:
+        answer = summary
+    else:
+        answer = (
+            "I couldn't access a summary for this video. "
+            "Check that the video has an available transcript and try again."
+        )
+
+    return {
+        "messages": [AIMessage(content=answer)],
+        "summary_answer": answer,
+    }
+
+
+def detailed_summary_node(state: GraphState, config: RunnableConfig):
+    logger.info("Graph node triggered: detailed_summary")
+    question = state["messages"][-1].content
+    summary = state.get("video_summary", "")
+
+    try:
+        documents = get_retriever(state.get("video_id", "")).invoke(question)
+    except Exception:
+        logger.exception("Detailed-summary retrieval failed; using stored summary only")
+        documents = []
+
+    excerpts = "\n\n".join(doc.page_content for doc in documents)
+    context = (
+        f"Stored video summary:\n{summary}\n\n"
+        f"Relevant transcript excerpts:\n{excerpts}"
+    )
+    chain = generate_prompt | response_llm(config)
+    response_parts = []
+    for chunk in chain.stream({"context": context, "question": question}, config=config):
+        content = stream_text(chunk.content)
+        if content:
+            response_parts.append(content)
+
+    return {"messages": [AIMessage(content="".join(response_parts))]}
+
+
 # ──────────────────────────────────────────────
 # SHOULD GRADE  (fast-path decision node)
 # ──────────────────────────────────────────────
 
 def should_grade_node(state: GraphState):
-    """
-    Decide whether the grader is needed.
-
-    Fast path: If retrieval returned enough documents AND this is
-    the first attempt (no prior rewrite), skip the grader entirely
-    and go straight to generate.
-
-    Recovery path: If retrieval returned few/no documents, or this
-    is a retry after rewrite, run the full grader for quality control.
-    """
     logger.info("Graph node triggered: should_grade")
     documents = state.get("documents", [])
     retry_count = state.get("retry_count", 0)
 
-    # Fast path: good retrieval on first attempt
-    if len(documents) >= MIN_DOCS_FOR_FAST_PATH and retry_count == 0:
-        print(f"[Graph] Fast path: {len(documents)} docs retrieved, skipping grader")
-        return {"skip_grader": True}
-
-    # Recovery path: need grader to decide next action
-    print(f"[Graph] Recovery path: {len(documents)} docs, retry={retry_count}, running grader")
+    print(f"[Graph] Running grader: {len(documents)} docs, retry={retry_count}")
     return {"skip_grader": False}
 
 
@@ -419,24 +511,49 @@ def tavily_search(query: str):
     when the YouTube transcript does not contain enough information.
     """
 
+    if not TAVILY_API_KEY:
+        raise RuntimeError("TAVILY_API_KEY is not configured in the backend environment.")
+
     response = tavily_client.search(
         query=query,
         search_depth="basic",
-        max_results=5
+        max_results=4
     )
 
-    return response["results"]
+    if not isinstance(response, dict):
+        return []
+    results = response.get("results") or []
+    return [result for result in results if isinstance(result, dict)]
 
 
 def web_search_node(state: GraphState):
     logger.info("Graph node triggered: web_search")
 
     question = state["messages"][-1].content
+    video_title = state.get("video_title", "")
+    
+    # Inject context to prevent hilarious hallucinations (e.g., Jev = Japanese Encephalitis Vaccine)
+    search_query = f"{video_title} {question}" if video_title else question
+    
+    print(f"[Web] Internet search via Tavily: START (query: '{search_query}')")
 
-    results = tavily_search.invoke(question)
+    try:
+        results = tavily_search.invoke({"query": search_query}) or []
+        error = ""
+        if not results:
+            logger.warning("Tavily returned no results for the request")
+            print("[Web] Tavily search completed: 0 results")
+        else:
+            print(f"[Web] Tavily search completed: {len(results)} results")
+    except Exception as exception:
+        logger.exception("Tavily web search failed")
+        print(f"[Web] Tavily search failed: {type(exception).__name__}")
+        results = []
+        error = str(exception)
 
     return {
-        "web_results": results
+        "web_results": results,
+        "web_search_error": error,
     }
 
 
@@ -454,13 +571,19 @@ def context_fusion_node(state: GraphState):
 
     web_context = "\n\n".join(
         f"""
-Title: {result.get("title", "")}
-Source: {result.get("url", "")}
+Title: {result.get("title") or ""}
+Source: {result.get("url") or ""}
 Content:
-{result.get("content", "")}
+{result.get("content") or ""}
 """
         for result in state.get("web_results", [])
+        if isinstance(result, dict)
     )
+    if not web_context:
+        if state.get("web_search_error"):
+            web_context = f"Web search failed: {state['web_search_error']}"
+        else:
+            web_context = "Tavily returned no web results for this query."
 
     final_context = f"""
 ===== YOUTUBE TRANSCRIPT =====
@@ -488,9 +611,11 @@ Use the provided context to answer the user's question.
 
 Rules:
 - Use only information supported by the provided context.
+- Treat the video title as reliable metadata and use it for questions about the video's or series' name.
 - Do not invent information.
 - If web search results are provided, they are additional information.
 - Clearly distinguish information from the YouTube transcript and web sources when useful.
+- If the web search failed or returned no results, say so clearly and do not claim that a web search found supporting information.
 - If the available context does not contain enough information, say so honestly.
 - Keep the answer clear and relevant.
 - Reply in the same language as the user's question, whether it is Hindi, English, or another language.
@@ -518,6 +643,10 @@ def generate_node(state: GraphState, config: RunnableConfig):
             doc.page_content
             for doc in state.get("documents", [])
         )
+
+    video_title = state.get("video_title", "").strip()
+    if video_title:
+        context = f"Video title: {video_title}\n\n{context}"
 
     print(f"[Graph] Generation started")
 
@@ -554,7 +683,12 @@ def reset_request_state(state: GraphState):
         "rewritten_query": "",
         "context": "",
         "web_results": [],
+        "web_search_error": "",
         "documents": [],
         "grade": {},
         "skip_grader": False,
+        "detailed_summary": False,
+        "video_summary": "",
+        "summary_error": "",
+        "summary_answer": "",
     }

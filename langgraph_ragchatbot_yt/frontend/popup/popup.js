@@ -28,6 +28,8 @@ let isSending = false;
 let streamFinished = false;
 let currentRequestId = null;
 let activeWelcomeGreeting = null;
+let currentWebSearchUsed = false;
+let currentRagUsed = false;
 
 // DOM Elements
 const videoTitleEl = document.getElementById('video-title');
@@ -98,8 +100,10 @@ function loadState(videoId) {
     chrome.storage.local.get([
         'apiKey', 'selectedModel', 'videoId', 'sessionId', 
         'chatHistory', 'isBannerVisible', 'isModelPillVisible',
-        'isGenerating', 'currentStream', 'currentError', 'currentRequestId'
+        'isGenerating', 'currentStream', 'currentWebSearchUsed', 'currentRagUsed', 'currentError', 'currentRequestId'
     ], (result) => {
+        currentWebSearchUsed = Boolean(result.currentWebSearchUsed);
+        currentRagUsed = Boolean(result.currentRagUsed);
         
         // Restore Toggles
         if (result.isBannerVisible !== undefined) {
@@ -144,7 +148,12 @@ function loadState(videoId) {
                     // Update existing stream
                     currentActiveBotMessageDiv = document.createElement('div');
                     currentActiveBotMessageDiv.classList.add('message', 'bot-message');
-                    renderMarkdownInto(currentActiveBotMessageDiv, result.currentStream);
+                    renderBotAnswer(
+                        currentActiveBotMessageDiv,
+                        result.currentStream,
+                        currentWebSearchUsed,
+                        currentRagUsed
+                    );
                     chatHistoryEl.appendChild(currentActiveBotMessageDiv);
                     scrollToBottom();
                 } else {
@@ -165,6 +174,8 @@ function loadState(videoId) {
                 chatHistory: [],
                 isGenerating: false,
                 currentStream: "",
+                currentWebSearchUsed: false,
+                currentRagUsed: false,
                 currentRequestId: null,
                 currentError: null
             });
@@ -273,6 +284,8 @@ resetBtn.addEventListener('click', () => {
         chatHistory: [],
         isGenerating: false,
         currentStream: "",
+        currentWebSearchUsed: false,
+        currentRagUsed: false,
         currentRequestId: null,
         currentError: null
     });
@@ -298,6 +311,13 @@ saveSetupBtn.addEventListener('click', () => {
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace !== 'local') return;
 
+    if (changes.currentWebSearchUsed) {
+        currentWebSearchUsed = Boolean(changes.currentWebSearchUsed.newValue);
+    }
+    if (changes.currentRagUsed) {
+        currentRagUsed = Boolean(changes.currentRagUsed.newValue);
+    }
+
     // Chat History updated (either user asked a question, or bot finished)
     if (changes.chatHistory) {
         const history = changes.chatHistory.newValue || [];
@@ -310,7 +330,12 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             currentActiveBotMessageDiv &&
             !currentActiveBotMessageDiv.classList.contains('skeleton-message')
         ) {
-            renderMarkdownInto(currentActiveBotMessageDiv, lastMessage.text);
+            renderBotAnswer(
+                currentActiveBotMessageDiv,
+                lastMessage.text,
+                Boolean(lastMessage.webSearchUsed),
+                Boolean(lastMessage.ragUsed)
+            );
             currentActiveBotMessageDiv = null;
             streamFinished = true;
             scrollToBottom();
@@ -330,7 +355,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
                 currentActiveBotMessageDiv.classList.add('message', 'bot-message');
                 chatHistoryEl.appendChild(currentActiveBotMessageDiv);
             }
-            renderMarkdownInto(currentActiveBotMessageDiv, streamText);
+            renderBotAnswer(currentActiveBotMessageDiv, streamText, currentWebSearchUsed, currentRagUsed);
             scrollToBottom();
         }
     }
@@ -383,6 +408,7 @@ function handleAskQuestion() {
         type: "ASK_QUESTION",
         payload: {
             youtube_url: currentVideoInfo.url,
+            video_title: currentVideoInfo.title,
             question: question,
             session_id: sessionId,
             model: modelSelect.value,
@@ -404,7 +430,7 @@ function cancelGeneration() {
 
 // --- DOM Render Functions ---
 
-function renderMessage(sender, text, isError = false) {
+function renderMessage(sender, text, isError = false, webSearchUsed = false, ragUsed = false) {
     clearWelcomeState();
 
     const msgDiv = document.createElement('div');
@@ -414,7 +440,7 @@ function renderMessage(sender, text, isError = false) {
         msgDiv.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
     }
     if (sender === 'bot' && !isError) {
-        renderMarkdownInto(msgDiv, text);
+        renderBotAnswer(msgDiv, text, webSearchUsed, ragUsed);
     } else {
         msgDiv.textContent = text;
     }
@@ -422,11 +448,49 @@ function renderMessage(sender, text, isError = false) {
     scrollToBottom();
 }
 
+function renderBotAnswer(container, text, webSearchUsed, ragUsed) {
+    container.replaceChildren();
+
+    // Add Top Badge if RAG or Web Search was used
+    if (webSearchUsed || ragUsed) {
+        const topBadge = document.createElement('div');
+        topBadge.className = 'top-source-badge';
+        
+        let labelText = '';
+        let iconClass = '';
+        
+        if (webSearchUsed && ragUsed) {
+            labelText = 'Internet + Transcript';
+            iconClass = 'fa-solid fa-layer-group';
+        } else if (webSearchUsed) {
+            labelText = 'Internet Search';
+            iconClass = 'fa-solid fa-globe';
+        } else if (ragUsed) {
+            labelText = 'Video Transcript';
+            iconClass = 'fa-brands fa-youtube';
+        }
+        
+        const icon = document.createElement('i');
+        icon.className = iconClass;
+        
+        const label = document.createElement('span');
+        label.textContent = labelText;
+        
+        topBadge.append(icon, label);
+        container.appendChild(topBadge);
+    }
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'markdown-content';
+    renderMarkdownInto(contentDiv, text);
+    container.appendChild(contentDiv);
+}
+
 function renderChatHistory(historyArr) {
     chatHistoryEl.innerHTML = '';
     if (!historyArr) return;
     historyArr.forEach(msg => {
-        renderMessage(msg.sender, msg.text);
+        renderMessage(msg.sender, msg.text, false, Boolean(msg.webSearchUsed), Boolean(msg.ragUsed));
     });
 
     if (!historyArr.length && !currentActiveBotMessageDiv) {
