@@ -149,9 +149,10 @@ async def ask(request: AskRequest):
 
     async def generate():
         try:
-            start_time = time.time()
+            start_time = time.perf_counter()
             first_token_received = False
             answer_streamed = False
+            streamed_answer = ""
 
             # Stream LLM tokens and the non-streamed stored-summary response.
             async for mode, event in chatbot.astream(
@@ -187,29 +188,34 @@ async def ask(request: AskRequest):
                 # and contains actual content
                 if metadata.get("langgraph_node") in ["generate", "chat", "detailed_summary"]:
                     content = chunk.content
+                    if isinstance(content, str):
+                        content_text = content
+                    elif isinstance(content, list):
+                        content_text = "".join(
+                            item.get("text", "") if isinstance(item, dict) else item
+                            for item in content
+                            if isinstance(item, (str, dict))
+                        )
+                    else:
+                        content_text = ""
 
-                    if content:
+                    if content_text:
+                        if streamed_answer and content_text.startswith(streamed_answer):
+                            content_text = content_text[len(streamed_answer):]
+
+                    if content_text:
                         if not first_token_received:
                             first_token_received = True
-                            elapsed = time.time() - start_time
-                            print(f"[LLM] First token received after {elapsed:.2f}s")
+                            elapsed = time.perf_counter() - start_time
+                            print(
+                                f"[Timing] End-to-end first answer token after "
+                                f"{elapsed:.2f}s (includes routing, retrieval, grading, "
+                                "search, and generation)"
+                            )
 
-                        # Handle strings safely
-                        if isinstance(content, str):
-                            answer_streamed = True
-                            yield content
-
-                        # Handle structured content safely
-                        elif isinstance(content, list):
-                            for item in content:
-                                if isinstance(item, dict):
-                                    text = item.get("text")
-                                    if text:
-                                        answer_streamed = True
-                                        yield text
-                                elif isinstance(item, str):
-                                    answer_streamed = True
-                                    yield item
+                        answer_streamed = True
+                        streamed_answer += content_text
+                        yield content_text
 
         except Exception as e:
             yield f"\n\n[ERROR]: {str(e)}"

@@ -12,16 +12,16 @@ def grade_route(state):
     retry_count = state.get("retry_count", 0)
 
     if action == "web_search":
-        return "web_search"
+        return "generate"
 
     if grade.get("overall_score", 0) < GRADE_THRESHOLD:
         if retry_count < MAX_RETRIES:
             return "rewrite_query"
-        return "web_search"
+        return "generate"
 
     if action == "rewrite_query":
         if retry_count < MAX_RETRIES:
             return "rewrite_query"
-        return "web_search"
+        return "generate"
 
     return "generate"

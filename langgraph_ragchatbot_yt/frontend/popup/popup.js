@@ -482,7 +482,10 @@ function renderBotAnswer(container, text, webSearchUsed, ragUsed) {
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'markdown-content';
-    renderMarkdownInto(contentDiv, text);
+    const visibleText = String(text || '')
+        .replaceAll('\u001eWEB_SEARCH_USED\u001e', '')
+        .replaceAll('\u001eRAG_USED\u001e', '');
+    renderMarkdownInto(contentDiv, visibleText);
     container.appendChild(contentDiv);
 }
 

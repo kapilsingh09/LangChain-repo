@@ -68,6 +68,9 @@ class RouteDecision(BaseModel):
     )
 
 router_llm = groq_llm.with_structured_output(RouteDecision)
+google_llm_no_afc = google_llm.bind(
+    automatic_function_calling={"disable": True}
+)
 
 
 def is_casual_message(message: str) -> bool:
@@ -194,7 +197,7 @@ from langchain_core.runnables import RunnableConfig
 
 def response_llm(config: RunnableConfig):
     provider = (config.get("configurable") or {}).get("model", "groq")
-    return groq_llm if provider == "groq" else google_llm
+    return groq_llm if provider == "groq" else google_llm_no_afc
 
 
 def chat_node(state: GraphState, config: RunnableConfig):
@@ -248,13 +251,17 @@ class ContextGrade(BaseModel):
     )
 
 
-grader_llm = google_llm.with_structured_output(ContextGrade, method="json_schema")
+grader_llm = groq_llm.with_structured_output(
+    ContextGrade,
+    method="json_schema",
+)
 
 
 def grade_documents(state: GraphState):
     logger.info("Graph node triggered: grader")
 
     question = state["messages"][-1].content
+    video_title = state.get("video_title", "").strip()
 
     documents = state.get("documents", [])
 
@@ -262,6 +269,8 @@ def grade_documents(state: GraphState):
         doc.page_content
         for doc in documents
     )
+    if video_title:
+        context = f"Video title: {video_title}\n\n{context}"
 
     prompt = f"""
 You are the corrective grading agent in a YouTube C-RAG system.
@@ -311,7 +320,9 @@ Retrieved YouTube Context:
 {context}
 """
 
+    grader_started = time.perf_counter()
     result = grader_llm.invoke(prompt)
+    print(f"[Timing] Grader completed in {time.perf_counter() - grader_started:.2f}s")
 
     overall_score = (
         result.relevance
@@ -376,7 +387,7 @@ def rewrite_query_node(state: GraphState):
         context=context
     )
 
-    response = google_llm.invoke(prompt)
+    response = groq_llm.invoke(prompt)
 
     rewritten_query = normalize_text(response.content)
 
@@ -537,6 +548,7 @@ def web_search_node(state: GraphState):
     
     print(f"[Web] Internet search via Tavily: START (query: '{search_query}')")
 
+    search_started = time.perf_counter()
     try:
         results = tavily_search.invoke({"query": search_query}) or []
         error = ""
@@ -550,6 +562,8 @@ def web_search_node(state: GraphState):
         print(f"[Web] Tavily search failed: {type(exception).__name__}")
         results = []
         error = str(exception)
+
+    print(f"[Timing] Tavily completed in {time.perf_counter() - search_started:.2f}s")
 
     return {
         "web_results": results,
@@ -612,6 +626,8 @@ Use the provided context to answer the user's question.
 Rules:
 - Use only information supported by the provided context.
 - Treat the video title as reliable metadata and use it for questions about the video's or series' name.
+- The transcript may contain speech-recognition errors. Do not attribute nearby dialogue or actions to a named person unless the context clearly connects them; state when the transcript is unclear.
+- For identity questions, an honorific or a nearby mention of a role is not enough to assign that role to the person. Only state roles or background details that the transcript directly connects to that person.
 - Do not invent information.
 - If web search results are provided, they are additional information.
 - Clearly distinguish information from the YouTube transcript and web sources when useful.
@@ -648,7 +664,10 @@ def generate_node(state: GraphState, config: RunnableConfig):
     if video_title:
         context = f"Video title: {video_title}\n\n{context}"
 
-    print(f"[Graph] Generation started")
+    provider = (config.get("configurable") or {}).get("model", "groq")
+    generation_started = time.perf_counter()
+    first_token_logged = False
+    print(f"[Graph] Generation started (model={provider})")
 
     # Groq is used for the user-facing stream because it avoids Gemini's
     # exhausted free-tier generation quota and returns the first token faster.
@@ -663,7 +682,15 @@ def generate_node(state: GraphState, config: RunnableConfig):
     }, config=config):
         content = stream_text(chunk.content)
         if content:
+            if not first_token_logged:
+                first_token_logged = True
+                print(
+                    f"[Timing] Generation first token in "
+                    f"{time.perf_counter() - generation_started:.2f}s (model={provider})"
+                )
             response_parts.append(content)
+
+    print(f"[Timing] Generation completed in {time.perf_counter() - generation_started:.2f}s")
 
     response = AIMessage(content="".join(response_parts))
 

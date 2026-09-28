@@ -31,21 +31,24 @@ async function handleStreamingRequest(payload) {
 
     async function consumeStreamText(text, flush = false) {
         pendingStreamText += text;
-        
-        let markerIndex = pendingStreamText.indexOf(WEB_SEARCH_MARKER);
-        while (markerIndex !== -1) {
-            fullAnswer += pendingStreamText.slice(0, markerIndex);
-            pendingStreamText = pendingStreamText.slice(markerIndex + WEB_SEARCH_MARKER.length);
-            webSearchUsed = true;
-            markerIndex = pendingStreamText.indexOf(WEB_SEARCH_MARKER);
-        }
 
-        let ragMarkerIndex = pendingStreamText.indexOf(RAG_MARKER);
-        while (ragMarkerIndex !== -1) {
-            fullAnswer += pendingStreamText.slice(0, ragMarkerIndex);
-            pendingStreamText = pendingStreamText.slice(ragMarkerIndex + RAG_MARKER.length);
-            ragUsed = true;
-            ragMarkerIndex = pendingStreamText.indexOf(RAG_MARKER);
+        while (true) {
+            const webSearchIndex = pendingStreamText.indexOf(WEB_SEARCH_MARKER);
+            const ragIndex = pendingStreamText.indexOf(RAG_MARKER);
+            const markerIndex = [webSearchIndex, ragIndex]
+                .filter(index => index !== -1)
+                .sort((left, right) => left - right)[0];
+
+            if (markerIndex === undefined) break;
+
+            fullAnswer += pendingStreamText.slice(0, markerIndex);
+            if (markerIndex === webSearchIndex) {
+                pendingStreamText = pendingStreamText.slice(markerIndex + WEB_SEARCH_MARKER.length);
+                webSearchUsed = true;
+            } else {
+                pendingStreamText = pendingStreamText.slice(markerIndex + RAG_MARKER.length);
+                ragUsed = true;
+            }
         }
 
         if (flush) {
