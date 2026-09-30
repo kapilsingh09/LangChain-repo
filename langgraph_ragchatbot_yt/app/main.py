@@ -184,7 +184,7 @@ async def ask(request: AskRequest):
 
                 chunk, metadata = event
 
-                # Check if this chunk is from the final generation node (or chat node)
+                # Check for if this chunk is from the final generation node (or chat node)
                 # and contains actual content
                 if metadata.get("langgraph_node") in ["generate", "chat", "detailed_summary"]:
                     content = chunk.content
@@ -231,9 +231,7 @@ async def ask(request: AskRequest):
     )
 
 
-# ──────────────────────────────────────────────
-# Dev server
-# ──────────────────────────────────────────────
+#server entrypoint
 
 if __name__ == "__main__":
 

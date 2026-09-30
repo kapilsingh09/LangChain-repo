@@ -30,6 +30,7 @@ let currentRequestId = null;
 let activeWelcomeGreeting = null;
 let currentWebSearchUsed = false;
 let currentRagUsed = false;
+let currentSourceType = null;
 
 // DOM Elements
 const videoTitleEl = document.getElementById('video-title');
@@ -100,10 +101,11 @@ function loadState(videoId) {
     chrome.storage.local.get([
         'apiKey', 'selectedModel', 'videoId', 'sessionId', 
         'chatHistory', 'isBannerVisible', 'isModelPillVisible',
-        'isGenerating', 'currentStream', 'currentWebSearchUsed', 'currentRagUsed', 'currentError', 'currentRequestId'
+        'isGenerating', 'currentStream', 'currentWebSearchUsed', 'currentRagUsed', 'currentSourceType', 'currentError', 'currentRequestId'
     ], (result) => {
         currentWebSearchUsed = Boolean(result.currentWebSearchUsed);
         currentRagUsed = Boolean(result.currentRagUsed);
+        currentSourceType = result.currentSourceType || null;
         
         // Restore Toggles
         if (result.isBannerVisible !== undefined) {
@@ -317,6 +319,9 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.currentRagUsed) {
         currentRagUsed = Boolean(changes.currentRagUsed.newValue);
     }
+    if (changes.currentSourceType) {
+        currentSourceType = changes.currentSourceType.newValue || null;
+    }
 
     // Chat History updated (either user asked a question, or bot finished)
     if (changes.chatHistory) {
@@ -334,7 +339,8 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
                 currentActiveBotMessageDiv,
                 lastMessage.text,
                 Boolean(lastMessage.webSearchUsed),
-                Boolean(lastMessage.ragUsed)
+                Boolean(lastMessage.ragUsed),
+                lastMessage.sourceType || currentSourceType
             );
             currentActiveBotMessageDiv = null;
             streamFinished = true;
@@ -355,7 +361,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
                 currentActiveBotMessageDiv.classList.add('message', 'bot-message');
                 chatHistoryEl.appendChild(currentActiveBotMessageDiv);
             }
-            renderBotAnswer(currentActiveBotMessageDiv, streamText, currentWebSearchUsed, currentRagUsed);
+            renderBotAnswer(currentActiveBotMessageDiv, streamText, currentWebSearchUsed, currentRagUsed, currentSourceType);
             scrollToBottom();
         }
     }
@@ -430,7 +436,7 @@ function cancelGeneration() {
 
 // --- DOM Render Functions ---
 
-function renderMessage(sender, text, isError = false, webSearchUsed = false, ragUsed = false) {
+function renderMessage(sender, text, isError = false, webSearchUsed = false, ragUsed = false, sourceType = null) {
     clearWelcomeState();
 
     const msgDiv = document.createElement('div');
@@ -440,7 +446,7 @@ function renderMessage(sender, text, isError = false, webSearchUsed = false, rag
         msgDiv.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
     }
     if (sender === 'bot' && !isError) {
-        renderBotAnswer(msgDiv, text, webSearchUsed, ragUsed);
+        renderBotAnswer(msgDiv, text, webSearchUsed, ragUsed, sourceType);
     } else {
         msgDiv.textContent = text;
     }
@@ -448,43 +454,60 @@ function renderMessage(sender, text, isError = false, webSearchUsed = false, rag
     scrollToBottom();
 }
 
-function renderBotAnswer(container, text, webSearchUsed, ragUsed) {
+function normalizeSourceType(sourceType) {
+    const normalized = String(sourceType || '').trim().toLowerCase().replace(/[+\s-]+/g, '_');
+    if (['rag_web', 'web_rag', 'rag_and_web', 'both', 'combined'].includes(normalized)) return 'rag_web';
+    if (normalized === 'web') return 'web';
+    if (normalized === 'rag') return 'rag';
+    return null;
+}
+
+function resolveSourceType(sourceType, webSearchUsed, ragUsed) {
+    const metadataSourceType = normalizeSourceType(sourceType);
+    const effectiveWebUsed = Boolean(webSearchUsed) || metadataSourceType === 'web' || metadataSourceType === 'rag_web';
+    const effectiveRagUsed = Boolean(ragUsed) || metadataSourceType === 'rag' || metadataSourceType === 'rag_web';
+
+    if (effectiveRagUsed && effectiveWebUsed) return 'rag_web';
+    if (effectiveWebUsed) return 'web';
+    if (effectiveRagUsed) return 'rag';
+    return null;
+}
+
+function renderBotAnswer(container, text, webSearchUsed, ragUsed, sourceType = null) {
+    const resolvedText = String(text || '');
+    const normalizedSourceType = resolveSourceType(sourceType, webSearchUsed, ragUsed);
+
     container.replaceChildren();
 
-    // Add Top Badge if RAG or Web Search was used
-    if (webSearchUsed || ragUsed) {
+    if (normalizedSourceType === 'rag_web') {
         const topBadge = document.createElement('div');
         topBadge.className = 'top-source-badge';
-        
-        let labelText = '';
-        let iconClass = '';
-        
-        if (webSearchUsed && ragUsed) {
-            labelText = 'Internet + Transcript';
-            iconClass = 'fa-solid fa-layer-group';
-        } else if (webSearchUsed) {
-            labelText = 'Internet Search';
-            iconClass = 'fa-solid fa-globe';
-        } else if (ragUsed) {
-            labelText = 'Video Transcript';
-            iconClass = 'fa-brands fa-youtube';
-        }
-        
-        const icon = document.createElement('i');
-        icon.className = iconClass;
-        
-        const label = document.createElement('span');
-        label.textContent = labelText;
-        
-        topBadge.append(icon, label);
+        const badgeText = document.createElement('span');
+        badgeText.textContent = '📚 RAG + 🌐 WEB';
+        topBadge.appendChild(badgeText);
+        container.appendChild(topBadge);
+    } else if (normalizedSourceType === 'web') {
+        const topBadge = document.createElement('div');
+        topBadge.className = 'top-source-badge';
+        const badgeText = document.createElement('span');
+        badgeText.textContent = '🌐 WEB';
+        topBadge.appendChild(badgeText);
+        container.appendChild(topBadge);
+    } else if (normalizedSourceType === 'rag') {
+        const topBadge = document.createElement('div');
+        topBadge.className = 'top-source-badge';
+        const badgeText = document.createElement('span');
+        badgeText.textContent = '📚 RAG';
+        topBadge.appendChild(badgeText);
         container.appendChild(topBadge);
     }
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'markdown-content';
-    const visibleText = String(text || '')
+    const visibleText = resolvedText
         .replaceAll('\u001eWEB_SEARCH_USED\u001e', '')
-        .replaceAll('\u001eRAG_USED\u001e', '');
+        .replaceAll('\u001eRAG_USED\u001e', '')
+        .replaceAll(/\u001eSOURCE_TYPE:[^\u001e]*\u001e/g, '');
     renderMarkdownInto(contentDiv, visibleText);
     container.appendChild(contentDiv);
 }
@@ -493,7 +516,11 @@ function renderChatHistory(historyArr) {
     chatHistoryEl.innerHTML = '';
     if (!historyArr) return;
     historyArr.forEach(msg => {
-        renderMessage(msg.sender, msg.text, false, Boolean(msg.webSearchUsed), Boolean(msg.ragUsed));
+        const msgText = String(msg.text || '');
+        const webUsed = Boolean(msg.webSearchUsed) || msgText.includes('\u001eWEB_SEARCH_USED\u001e');
+        const ragUsed = Boolean(msg.ragUsed) || msgText.includes('\u001eRAG_USED\u001e');
+        const msgSourceType = msg.sourceType || msg.source_type || null;
+        renderMessage(msg.sender, msg.text, false, webUsed, ragUsed, msgSourceType);
     });
 
     if (!historyArr.length && !currentActiveBotMessageDiv) {

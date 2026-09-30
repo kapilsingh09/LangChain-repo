@@ -2,7 +2,16 @@
 const API_BASE_URL = "http://localhost:8000";
 const WEB_SEARCH_MARKER = '\u001eWEB_SEARCH_USED\u001e';
 const RAG_MARKER = '\u001eRAG_USED\u001e';
+const SOURCE_TYPE_MARKER_PREFIX = '\u001eSOURCE_TYPE:';
 let activeRequest = null;
+
+function normalizeSourceType(value) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[+\s-]+/g, '_');
+    if (['rag_web', 'web_rag', 'rag_and_web', 'both', 'combined'].includes(normalized)) return 'rag_web';
+    if (normalized === 'web') return 'web';
+    if (normalized === 'rag') return 'rag';
+    return null;
+}
 
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -27,12 +36,24 @@ async function handleStreamingRequest(payload) {
     let pendingStreamText = '';
     let webSearchUsed = false;
     let ragUsed = false;
+    let sourceType = null;
     let history = [];
 
     async function consumeStreamText(text, flush = false) {
         pendingStreamText += text;
 
         while (true) {
+            const sourceTypeIndex = pendingStreamText.indexOf(SOURCE_TYPE_MARKER_PREFIX);
+            if (sourceTypeIndex !== -1) {
+                const endIndex = pendingStreamText.indexOf('\u001e', sourceTypeIndex + SOURCE_TYPE_MARKER_PREFIX.length);
+                if (endIndex !== -1) {
+                    const extracted = pendingStreamText.slice(sourceTypeIndex + SOURCE_TYPE_MARKER_PREFIX.length, endIndex);
+                    sourceType = normalizeSourceType(extracted);
+                    pendingStreamText = pendingStreamText.slice(0, sourceTypeIndex) + pendingStreamText.slice(endIndex + 1);
+                    continue;
+                }
+            }
+
             const webSearchIndex = pendingStreamText.indexOf(WEB_SEARCH_MARKER);
             const ragIndex = pendingStreamText.indexOf(RAG_MARKER);
             const markerIndex = [webSearchIndex, ragIndex]
@@ -56,7 +77,7 @@ async function handleStreamingRequest(payload) {
             pendingStreamText = '';
         } else {
             let partialMarkerLength = 0;
-            const markers = [WEB_SEARCH_MARKER, RAG_MARKER];
+            const markers = [WEB_SEARCH_MARKER, RAG_MARKER, SOURCE_TYPE_MARKER_PREFIX + 'rag', SOURCE_TYPE_MARKER_PREFIX + 'web', SOURCE_TYPE_MARKER_PREFIX + 'rag_web'];
             for (const marker of markers) {
                 const maxLength = Math.min(pendingStreamText.length, marker.length - 1);
                 for (let length = maxLength; length > 0; length--) {
@@ -66,16 +87,21 @@ async function handleStreamingRequest(payload) {
                     }
                 }
             }
-            
+
             const visibleLength = pendingStreamText.length - partialMarkerLength;
             fullAnswer += pendingStreamText.slice(0, visibleLength);
             pendingStreamText = pendingStreamText.slice(visibleLength);
         }
 
+        if (ragUsed && webSearchUsed) sourceType = 'rag_web';
+        else if (webSearchUsed) sourceType = 'web';
+        else if (ragUsed) sourceType = 'rag';
+
         await chrome.storage.local.set({
             currentStream: fullAnswer,
             currentWebSearchUsed: webSearchUsed,
-            currentRagUsed: ragUsed
+            currentRagUsed: ragUsed,
+            currentSourceType: sourceType,
         });
     }
 
@@ -86,6 +112,7 @@ async function handleStreamingRequest(payload) {
             currentStream: "",
             currentWebSearchUsed: false,
             currentRagUsed: false,
+            currentSourceType: null,
             currentError: null,
             currentRequestId: payload.requestId
         });
@@ -130,12 +157,13 @@ async function handleStreamingRequest(payload) {
         await consumeStreamText(decoder.decode(), true);
 
         // 6. Complete Stream: move to history, clear stream
-        history.push({ sender: 'bot', text: fullAnswer, webSearchUsed, ragUsed });
+        history.push({ sender: 'bot', text: fullAnswer, webSearchUsed, ragUsed, sourceType });
         await chrome.storage.local.set({
             chatHistory: history,
             currentStream: "",
             currentWebSearchUsed: false,
             currentRagUsed: false,
+            currentSourceType: sourceType,
             isGenerating: false,
             currentRequestId: null
         });
@@ -146,13 +174,14 @@ async function handleStreamingRequest(payload) {
             if (fullAnswer) {
                 const latest = await chrome.storage.local.get(['chatHistory']);
                 history = latest.chatHistory || history;
-                history.push({ sender: 'bot', text: fullAnswer, webSearchUsed, ragUsed });
+                history.push({ sender: 'bot', text: fullAnswer, webSearchUsed, ragUsed, sourceType });
             }
             await chrome.storage.local.set({
                 chatHistory: history,
                 currentStream: "",
                 currentWebSearchUsed: false,
                 currentRagUsed: false,
+                currentSourceType: sourceType,
                 isGenerating: false,
                 currentRequestId: null,
                 currentError: null
@@ -166,6 +195,7 @@ async function handleStreamingRequest(payload) {
             currentStream: "",
             currentWebSearchUsed: false,
             currentRagUsed: false,
+            currentSourceType: sourceType,
             currentRequestId: null,
             currentError: error.message || "Network error or backend unavailable"
         });

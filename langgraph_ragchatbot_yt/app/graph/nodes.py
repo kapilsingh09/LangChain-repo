@@ -7,7 +7,7 @@ import time
 
 from app.rag.retriever import get_retriever
 from app.ingestion.video_summary import ensure_video_summary
-from app.llm.models import groq_llm, google_llm
+from app.llm.models import groq_llm, get_groq_variant
 from app.graph.state import GraphState
 from tavily import TavilyClient
 from langchain_core.tools import tool
@@ -68,9 +68,10 @@ class RouteDecision(BaseModel):
     )
 
 router_llm = groq_llm.with_structured_output(RouteDecision)
-google_llm_no_afc = google_llm.bind(
-    automatic_function_calling={"disable": True}
-)
+
+
+def router_model_for_state(state: GraphState):
+    return get_groq_variant(state.get("video_id") or state["messages"][-1].content)
 
 
 def is_casual_message(message: str) -> bool:
@@ -84,12 +85,45 @@ def is_casual_message(message: str) -> bool:
     return normalized in casual_messages
 
 
+def is_topic_summary_request(message: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s]", " ", message.lower())
+    summary_match = re.search(r"\b(?:summari[sz]e|summary|sum up)\b", normalized)
+    if not summary_match:
+        return False
+
+    whole_video_request = re.search(
+        r"\b(?:whole|entire|full|overall)\s+video\b"
+        r"|\b(?:summari[sz]e|summary|sum up)\s+(?:the|this)\s+video\b"
+        r"|\b(?:main points|overview)\b",
+        normalized,
+    )
+    if whole_video_request:
+        return False
+
+    filler_words = {
+        "a", "about", "can", "do", "for", "from", "give", "i", "in", "me",
+        "of", "on", "please", "the", "this", "that", "these", "those", "to",
+        "video", "want", "what", "with", "you", "your", "bro", "things", "thing",
+    }
+    words = normalized.split()
+    summary_index = len(normalized[:summary_match.start()].split())
+    topic_words = [
+        word
+        for word in words[:summary_index] + words[summary_index + len(summary_match.group().split()):]
+        if word not in filler_words
+        and not re.fullmatch(r"summari[sz]e|summary|sum|up", word)
+    ]
+    return bool(topic_words)
+
+
 def make_decision_route(state: GraphState):
     logger.info("Graph node triggered: router")
     user_message = state["messages"][-1].content
 
     if isinstance(user_message, str) and is_casual_message(user_message):
         return {"decision_route": "chat", "detailed_summary": False}
+    if isinstance(user_message, str) and is_topic_summary_request(user_message):
+        return {"decision_route": "rag", "detailed_summary": False}
 
     prompt = f"""
 You are a routing agent for a YouTube RAG chatbot.
@@ -137,17 +171,25 @@ This includes:
 
 The user wants a whole-video overview, summary, main points, or explanation of the entire video.
 Examples include "Summarize the video", "Give me an overview", "What are the main points?", and "What is this video about?".
+If the user asks to summarize a named topic or concept, use "rag" to summarize only the relevant transcript content. Do not treat the topic name as a request for a whole-video summary.
 
 Set detailed_summary to true only if the whole-video summary also requests a specific focus, examples, evidence, timestamps, or extra detail. A simple summary request must set it to false.
 
 ### Use "web_search" when:
 
-The user explicitly asks to use Tavily, search the web/internet, asks for current or latest information, or asks for external research. This route must be chosen even if the transcript might contain a partial answer.
+The user asks only for web research or current/external information, without asking what the video says.
+
+If the user asks for both information from the video and current/external verification,
+choose "rag" first. The grader will use Web Search for information missing from the transcript,
+so both sources can contribute to the answer.
 
 Examples:
 "Use Tavily to search the web for this."
 "Internet par latest information search karo."
 → web_search
+
+"What does this video say about SSI, and what is SSI currently doing?"
+→ rag
 
 Examples:
 "What is self-supervised learning?"
@@ -172,6 +214,8 @@ If the user asks about a specific fact or topic from the video, choose "rag".
 When you are unsure whether the question is casual conversation or requires video information, choose "rag".
 
 Do not answer the user's question. Only classify it.
+Return only a valid JSON object with keys "decision_route" and "detailed_summary".
+Use a string for "decision_route" and a boolean for "detailed_summary".
 
 User message:
 {user_message}
@@ -179,7 +223,11 @@ User message:
 """
 
     try:
-        response = router_llm.invoke(prompt)
+        model = router_model_for_state(state)
+        response = model.with_structured_output(
+            RouteDecision,
+            method="json_mode",
+        ).invoke(prompt)
         return {
             "decision_route": response.decision_route,
             "detailed_summary": response.detailed_summary,
@@ -197,15 +245,37 @@ from langchain_core.runnables import RunnableConfig
 
 def response_llm(config: RunnableConfig):
     provider = (config.get("configurable") or {}).get("model", "groq")
-    return groq_llm if provider == "groq" else google_llm_no_afc
+    thread_id = str((config.get("configurable") or {}).get("thread_id") or "default")
+    variant = get_groq_variant(thread_id)
+    return variant if provider in {"groq", "gemini"} else variant
 
 
 def chat_node(state: GraphState, config: RunnableConfig):
     logger.info("Graph node triggered: chat")
 
+    user_text = state["messages"][-1].content if state["messages"] else ""
+    normalized = normalize_text(user_text).lower()
+    short_greetings = {
+        "hi",
+        "hello",
+        "hey",
+        "hii",
+        "hi there",
+        "hello there",
+        "hey there",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }
+
+    if normalized in short_greetings:
+        return {
+            "messages": [AIMessage(content="Hi! How can I help you?")]
+        }
+
     response = response_llm(config).invoke(
         [
-            SystemMessage(content="Reply in the same language as the user's latest message."),
+            SystemMessage(content="Reply in the same language as the user's latest message. If the user is speaking in English, reply in English. If they switch to Hindi or any other language, reply in that language instead. For short greetings such as hi/hello, keep it brief and polite in English."),
             *state["messages"],
         ],
         config=config,
@@ -251,10 +321,9 @@ class ContextGrade(BaseModel):
     )
 
 
-grader_llm = groq_llm.with_structured_output(
-    ContextGrade,
-    method="json_schema",
-)
+
+def grader_model_for_state(state: GraphState):
+    return get_groq_variant(state.get("video_id") or state["messages"][-1].content)
 
 
 def grade_documents(state: GraphState):
@@ -313,6 +382,11 @@ Do NOT choose rewrite_query just because the answer is not in the transcript.
 If the information genuinely does not exist in the transcript,
 choose web_search.
 
+Return only a valid JSON object with keys "relevance", "completeness",
+"specificity", "confidence", "action", and "reason". The first four
+values must be integers from 0 to 10. "action" must be "generate",
+"rewrite_query", or "web_search". "reason" must be a short string.
+
 User Question:
 {question}
 
@@ -321,7 +395,11 @@ Retrieved YouTube Context:
 """
 
     grader_started = time.perf_counter()
-    result = grader_llm.invoke(prompt)
+    model = grader_model_for_state(state)
+    result = model.with_structured_output(
+        ContextGrade,
+        method="json_mode",
+    ).invoke(prompt)
     print(f"[Timing] Grader completed in {time.perf_counter() - grader_started:.2f}s")
 
     overall_score = (
@@ -387,7 +465,8 @@ def rewrite_query_node(state: GraphState):
         context=context
     )
 
-    response = groq_llm.invoke(prompt)
+    model = get_groq_variant(state.get("video_id") or state["messages"][-1].content)
+    response = model.invoke(prompt)
 
     rewritten_query = normalize_text(response.content)
 
@@ -414,7 +493,6 @@ def retrieve_node(state: GraphState):
         # Optimize complex or hybrid queries for FAISS semantic search
         if len(query.split()) > 8:
             try:
-                from app.llm.models import groq_llm
                 optimization_prompt = f"""You are a search query optimizer.
 Extract ONLY the core topic, entities, and keywords from the user's question for a vector database search against a video transcript.
 Ignore conversational filler (e.g., "According to this video", "what does it say").
@@ -423,7 +501,8 @@ Return ONLY the essential keywords separated by spaces.
 
 Question: {query}
 Keywords:"""
-                response = groq_llm.invoke(optimization_prompt)
+                model = get_groq_variant(video_id)
+                response = model.invoke(optimization_prompt)
                 from app.graph.nodes import normalize_text
                 optimized = normalize_text(response.content)
                 if optimized and len(optimized) > 2:
@@ -619,22 +698,156 @@ Content:
 # ──────────────────────────────────────────────
 
 generate_prompt = ChatPromptTemplate.from_template("""
-You are an AI assistant answering questions about a YouTube video.
+You are a factual QA agent for a YouTube RAG system.
+You have no callable tools. Never attempt a tool call or another web search.
+Web Search, if needed, has already been performed; use only the source material below.
 
-Use the provided context to answer the user's question.
+Your primary source is the retrieved YouTube transcript/context.
 
-Rules:
-- Use only information supported by the provided context.
-- Treat the video title as reliable metadata and use it for questions about the video's or series' name.
-- The transcript may contain speech-recognition errors. Do not attribute nearby dialogue or actions to a named person unless the context clearly connects them; state when the transcript is unclear.
-- For identity questions, an honorific or a nearby mention of a role is not enough to assign that role to the person. Only state roles or background details that the transcript directly connects to that person.
-- Do not invent information.
-- If web search results are provided, they are additional information.
-- Clearly distinguish information from the YouTube transcript and web sources when useful.
-- If the web search failed or returned no results, say so clearly and do not claim that a web search found supporting information.
-- If the available context does not contain enough information, say so honestly.
-- Keep the answer clear and relevant.
-- Reply in the same language as the user's question, whether it is Hindi, English, or another language.
+## SOURCE PRIORITY
+Use the YouTube RAG context as the DEFAULT and PRIMARY source.
+Prefer RAG whenever the user's question can be answered from the retrieved transcript.
+Use Web Search only when necessary.
+The system should be RAG-heavy, not Web-heavy.
+
+## ROUTING RULES
+Choose exactly one route:
+
+### 1. RAG
+Use RAG when:
+- The answer is explicitly present in the retrieved transcript.
+- The question asks about something discussed in the video.
+- The question can be answered using only the video context.
+- The question asks for an explanation, fact, example, person, event, or concept that is sufficiently covered by the transcript.
+Do NOT use Web just because Web could provide additional information.
+If RAG contains enough information, answer ONLY from RAG.
+
+### 2. WEB
+Use Web when:
+- The requested information is not available in the video/RAG context.
+- The question explicitly asks for current/latest/recent information.
+- The question asks about information that exists outside the video.
+- The question asks about current prices, current positions, current events, recent research, recent statements, current statistics, etc.
+- The question is completely unrelated to the video and requires external knowledge.
+Examples:
+"What is Geoffrey Hinton's current research position?"
+"What is Nvidia's current stock price?"
+"What has Geoffrey Hinton said about AI safety recently?"
+These should use Web, not RAG-only.
+
+### 3. BOTH
+Use BOTH only when the question genuinely requires information from both sources.
+For example:
+"What did the video say about ImageNet, and what is the current state of ImageNet today?"
+The first part requires RAG.
+The second part requires Web.
+Another example:
+"According to the video, what was Hinton's contribution to AlexNet, and how did that contribution influence modern AI?"
+Use RAG for Hinton's contribution described in the video and Web for external/current context if the video does not contain it.
+Do NOT choose BOTH unnecessarily.
+If RAG alone is sufficient, use RAG.
+
+## IMPORTANT ANTI-HALLUCINATION RULE
+Never invent information that is not supported by the available source.
+If RAG is selected and the retrieved context does not contain enough information to answer the question:
+DO NOT guess.
+DO NOT use general model knowledge as if it came from the video.
+Instead, return:
+"📚 RAG: The available video context does not contain enough information to answer this."
+If relevant Web Search results are included below, answer the external part using those results.
+If no relevant Web Search results are included, clearly state that the information could not be verified.
+
+## SOURCE SEPARATION
+Never mix RAG and Web information without identifying their sources.
+When using RAG information, label the relevant answer:
+**📚 From the video (RAG):**
+...
+When using Web information, label it:
+**🌐 From the web:**
+...
+When both are used:
+**📚 From the video (RAG):**
+...
+
+**🌐 From the web:**
+...
+Keep the source sections clearly separated.
+Do not present Web information as if it was stated in the video.
+Do not present information from the video as if it came from Web Search.
+
+## CURRENT INFORMATION
+Words such as:
+- current
+- currently
+- latest
+- recent
+- today
+- now
+- as of 2026
+- recently
+- latest research
+- current position
+- current price
+usually indicate that Web Search is required.
+However, if the video itself explicitly contains the requested current information and the question does not require verification beyond the video's content, RAG may be used.
+
+## OUT-OF-SCOPE QUESTIONS
+If the question is unrelated to the video:
+Prefer Web Search rather than forcing the question through RAG.
+Example:
+User: "What is the current population of the United States?"
+Do NOT answer:
+"According to the video..."
+Instead use Web Search.
+
+## PARTIAL ANSWERS
+If a question has two parts and RAG can answer only one part:
+Do NOT stop after the RAG answer.
+Determine whether the missing part requires Web Search.
+Example:
+User: "What is ImageNet, and who currently maintains it?"
+If RAG contains the definition of ImageNet but not its current maintainer:
+Use BOTH.
+Return:
+**📚 From the video (RAG):**
+ImageNet is ...
+
+**🌐 From the web:**
+The current information about its maintenance is ...
+
+## FINAL ANSWER STYLE
+Keep answers concise and factual.
+Do not mention internal routing decisions such as:
+- "The router selected RAG."
+- "The router selected BOTH."
+- "I classified this as Web."
+- "The retrieval score was..."
+Only show the source labels to the user.
+Use citations when available.
+
+## SOURCE INTEGRITY
+Every factual claim must be supported by the source used for that claim.
+Never fabricate citations.
+Never fabricate transcript information.
+Never assume that information missing from RAG is true simply because the model knows it.
+When uncertain, say that the available evidence is insufficient.
+
+## PRIORITY ORDER
+Follow this decision order:
+1. Can RAG answer the question completely?
+→ Use RAG.
+2. Can RAG answer only part of the question?
+→ Use BOTH if Web can answer the missing part.
+3. Is the information current/recent/external and absent from RAG?
+→ Use WEB.
+4. Is the question unrelated to the video?
+→ Use WEB.
+5. If neither RAG nor Web can provide reliable evidence:
+→ Say that the information could not be verified.
+The goal is:
+RAG first → Web only when necessary → BOTH when genuinely required → never hallucinate.
+
+Use only the provided context and web results to answer. Do not invent missing details.
 
 Context:
 {context}
@@ -667,6 +880,9 @@ def generate_node(state: GraphState, config: RunnableConfig):
     provider = (config.get("configurable") or {}).get("model", "groq")
     generation_started = time.perf_counter()
     first_token_logged = False
+    has_rag = bool(state.get("documents"))
+    has_web = bool(state.get("web_results"))
+    source_type = "rag_web" if has_rag and has_web else "rag" if has_rag else "web" if has_web else "rag"
     print(f"[Graph] Generation started (model={provider})")
 
     # Groq is used for the user-facing stream because it avoids Gemini's

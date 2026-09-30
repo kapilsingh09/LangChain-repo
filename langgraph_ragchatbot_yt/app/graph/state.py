@@ -40,3 +40,6 @@ class GraphState(TypedDict):
 
     # Fast-path flag: skip the grader when retrieval looks sufficient
     skip_grader: bool
+
+    # Actual source state used for the answer.
+    source_type: Literal["rag", "web", "rag_web"]
