@@ -115,12 +115,23 @@ async function fetchIndexedVideos() {
     list.innerHTML = '';
     videos.forEach((v) => {
       const item = document.createElement('div');
-      item.className = `flex items-center gap-2 p-1.5 rounded-lg hover:bg-chatgpt-surface cursor-pointer text-xs transition-colors ${window.state.currentVideo && window.state.currentVideo.id === v.id ? 'bg-chatgpt-surface text-white' : 'text-chatgpt-textSecondary'}`;
+      item.className = `video-library-item flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-chatgpt-surface cursor-pointer text-xs transition-colors group ${window.state.currentVideo && window.state.currentVideo.id === v.id ? 'bg-chatgpt-surface text-white' : 'text-chatgpt-textSecondary'}`;
       item.innerHTML = `
-        <img src="${v.thumbnail_url}" class="w-9 h-6 object-cover rounded shrink-0 bg-black" alt="" />
-        <span class="truncate" title="${v.title}">${v.title}</span>
+        <div class="flex items-center gap-2 overflow-hidden flex-1 select-none">
+          <img src="${v.thumbnail_url}" class="w-9 h-6 object-cover rounded shrink-0 bg-black" alt="" />
+          <span class="truncate font-medium text-chatgpt-textPrimary" title="${v.title}">${v.title}</span>
+        </div>
+        <button class="video-delete-btn p-1 rounded hover:bg-rose-500/20 text-chatgpt-textMuted hover:text-rose-400 transition-all shrink-0" title="Delete video from library">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+          </svg>
+        </button>
       `;
-      item.addEventListener('click', async () => {
+
+      // Select Video
+      item.addEventListener('click', async (e) => {
+        if (e.target.closest('.video-delete-btn')) return;
         const detailRes = await fetch(`/api/videos/${v.id}`);
         if (detailRes.ok) {
           const fullVideo = await detailRes.json();
@@ -137,6 +148,16 @@ async function fetchIndexedVideos() {
           fetchIndexedVideos();
         }
       });
+
+      // Delete Video
+      const delBtn = item.querySelector('.video-delete-btn');
+      if (delBtn) {
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openVideoDeleteModal(v.id, v.title);
+        });
+      }
+
       list.appendChild(item);
     });
   } catch (e) {
@@ -156,6 +177,14 @@ function renderTranscriptTimeline(segments) {
   if (!segments || segments.length === 0) {
     container.innerHTML = '<div class="p-3 text-center text-xs text-chatgpt-textMuted">No transcript segments available.</div>';
     return;
+  }
+
+  if (window.timelineController && segments.length > 0) {
+    const lastSeg = segments[segments.length - 1];
+    const totalSecs = Math.ceil((lastSeg.start || 0) + (lastSeg.duration || 0));
+    if (totalSecs > 0) {
+      window.timelineController.setDuration(totalSecs);
+    }
   }
 
   segments.forEach((seg) => {
@@ -278,8 +307,9 @@ function renderChatList(chats) {
   });
 }
 
-// ── Custom Delete Confirmation Modal ─────────────────────────────────────────
+// ── Custom Delete Confirmation Modals ─────────────────────────────────────────
 let pendingDeleteChatId = null;
+let pendingDeleteVideoId = null;
 
 function openDeleteModal(chatId, chatTitle) {
   pendingDeleteChatId = chatId;
@@ -295,7 +325,88 @@ function closeDeleteModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+function openVideoDeleteModal(videoId, videoTitle) {
+  pendingDeleteVideoId = videoId;
+  const modal = document.getElementById('video-delete-modal');
+  const titleEl = document.getElementById('delete-video-title');
+  if (titleEl) titleEl.textContent = `"${videoTitle}"`;
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeVideoDeleteModal() {
+  pendingDeleteVideoId = null;
+  const modal = document.getElementById('video-delete-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function confirmVideoDelete() {
+  if (!pendingDeleteVideoId) return;
+  const vid = pendingDeleteVideoId;
+  closeVideoDeleteModal();
+
+  try {
+    const res = await fetch(`/api/videos/${vid}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete video');
+    window.showToast('Video removed from library', 'info');
+
+    if (window.state.currentVideo && window.state.currentVideo.id === vid) {
+      window.state.currentVideo = null;
+      window.state.currentChat = null;
+      window.state.chats = [];
+      const card = document.getElementById('current-video-card');
+      if (card) card.classList.add('hidden');
+      const placeholder = document.getElementById('video-placeholder');
+      const wrapper = document.getElementById('player-frame-wrapper');
+      if (placeholder) placeholder.classList.remove('hidden');
+      if (wrapper) wrapper.classList.add('hidden');
+      const messagesContainer = document.getElementById('messages-container');
+      const welcome = document.getElementById('chat-welcome-state');
+      if (messagesContainer) {
+        messagesContainer.querySelectorAll('.message-row').forEach(el => el.remove());
+      }
+      if (welcome) welcome.classList.remove('hidden');
+      const chatList = document.getElementById('chat-list');
+      if (chatList) chatList.innerHTML = '<div class="p-3 text-center text-chatgpt-textMuted text-xs">No video selected</div>';
+    }
+
+    await fetchIndexedVideos();
+  } catch (err) {
+    console.error(err);
+    window.showToast(err.message, 'error');
+  }
+}
+
 window.createNewChat = async function(videoId, title = 'New Research Chat') {
+  if (!videoId) {
+    window.showToast('Please load or select a video first', 'info');
+    return;
+  }
+
+  // Prevent duplicate empty chats: If already in an empty chat session, reuse it!
+  if (
+    window.state.currentChat &&
+    window.state.currentChat.video_id === videoId &&
+    (!window.state.currentChat.messages || window.state.currentChat.messages.length === 0)
+  ) {
+    const msgInput = document.getElementById('user-message-input');
+    if (msgInput) msgInput.focus();
+    window.showToast('Already on a fresh research session', 'info');
+    return;
+  }
+
+  // If there is an existing empty chat in the list for this video, switch to it!
+  if (Array.isArray(window.state.chats)) {
+    const existingEmpty = window.state.chats.find(
+      (c) => c.video_id === videoId && (!c.messages || c.messages.length === 0)
+    );
+    if (existingEmpty) {
+      await selectChat(existingEmpty.id);
+      const msgInput = document.getElementById('user-message-input');
+      if (msgInput) msgInput.focus();
+      return;
+    }
+  }
+
   try {
     const res = await fetch('/api/chats', {
       method: 'POST',
@@ -307,6 +418,8 @@ window.createNewChat = async function(videoId, title = 'New Research Chat') {
     const newChat = await res.json();
     await fetchChatsForVideo(videoId);
     await selectChat(newChat.id);
+    const msgInput = document.getElementById('user-message-input');
+    if (msgInput) msgInput.focus();
     window.showToast('New research session ready', 'success');
   } catch (err) {
     console.error(err);
@@ -380,6 +493,10 @@ function renderChatMessages(messages) {
 
   container.scrollTop = container.scrollHeight;
   updateCitationsTab();
+
+  if (window.timelineController) {
+    window.timelineController.renderMarkers(messages);
+  }
 }
 
 // ── Send Message ────────────────────────────────────────────────────────────
@@ -440,6 +557,12 @@ async function handleSendMessage(content) {
       updateCitationsTab();
     }
 
+    if (window.timelineController && window.state.currentChat) {
+      if (!window.state.currentChat.messages) window.state.currentChat.messages = [];
+      window.state.currentChat.messages.push(data.user_message, data.ai_message);
+      window.timelineController.renderMarkers(window.state.currentChat.messages);
+    }
+
     if (window.state.currentVideo) {
       fetchChatsForVideo(window.state.currentVideo.id);
     }
@@ -452,6 +575,115 @@ async function handleSendMessage(content) {
   }
 }
 
+// ── Draggable Panel Resizers (High-Performance Pointer Capture) ─────────────
+function initWorkspaceResizer() {
+  const resizer = document.getElementById('workspace-resizer');
+  const dock = document.getElementById('video-dock-panel');
+  const workspace = document.getElementById('view-workspace');
+  if (!resizer || !dock || !workspace) return;
+
+  // Restore saved width
+  const savedWidth = localStorage.getItem('yt_video_dock_width');
+  if (savedWidth) {
+    const parsed = parseInt(savedWidth, 10);
+    if (parsed >= 280 && parsed <= window.innerWidth * 0.75) {
+      dock.style.width = parsed + 'px';
+      dock.style.maxWidth = 'none';
+    }
+  }
+
+  let isDragging = false;
+
+  resizer.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    isDragging = true;
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('dragging');
+    document.body.classList.add('is-resizing');
+  });
+
+  resizer.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const workspaceRect = workspace.getBoundingClientRect();
+    const newWidth = e.clientX - workspaceRect.left;
+    const minWidth = 280;
+    const maxWidth = Math.max(minWidth, workspaceRect.width - 320);
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      dock.style.width = `${Math.round(newWidth)}px`;
+      dock.style.maxWidth = 'none';
+    }
+  });
+
+  const stopDrag = (e) => {
+    if (isDragging) {
+      isDragging = false;
+      try { resizer.releasePointerCapture(e.pointerId); } catch (err) {}
+      resizer.classList.remove('dragging');
+      document.body.classList.remove('is-resizing');
+      if (dock.style.width) {
+        localStorage.setItem('yt_video_dock_width', parseInt(dock.style.width, 10));
+      }
+    }
+  };
+
+  resizer.addEventListener('pointerup', stopDrag);
+  resizer.addEventListener('pointercancel', stopDrag);
+}
+
+function initSidebarResizer() {
+  const resizer = document.getElementById('sidebar-vertical-resizer');
+  const videoLibSection = document.getElementById('video-library-section');
+  const sidebar = document.getElementById('sidebar');
+  if (!resizer || !videoLibSection || !sidebar) return;
+
+  // Restore saved height
+  const savedHeight = localStorage.getItem('yt_sidebar_videolib_height');
+  if (savedHeight) {
+    const parsed = parseInt(savedHeight, 10);
+    if (parsed >= 100 && parsed <= 450) {
+      videoLibSection.style.height = parsed + 'px';
+    }
+  }
+
+  let isDragging = false;
+
+  resizer.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    isDragging = true;
+    resizer.setPointerCapture(e.pointerId);
+    resizer.classList.add('dragging');
+    document.body.classList.add('is-resizing');
+  });
+
+  resizer.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const newHeight = sidebarRect.bottom - e.clientY;
+    const minHeight = 90;
+    const maxHeight = Math.max(minHeight, sidebarRect.height - 160);
+
+    if (newHeight >= minHeight && newHeight <= maxHeight) {
+      videoLibSection.style.height = `${Math.round(newHeight)}px`;
+    }
+  });
+
+  const stopSidebarDrag = (e) => {
+    if (isDragging) {
+      isDragging = false;
+      try { resizer.releasePointerCapture(e.pointerId); } catch (err) {}
+      resizer.classList.remove('dragging');
+      document.body.classList.remove('is-resizing');
+      if (videoLibSection.style.height) {
+        localStorage.setItem('yt_sidebar_videolib_height', parseInt(videoLibSection.style.height, 10));
+      }
+    }
+  };
+
+  resizer.addEventListener('pointerup', stopSidebarDrag);
+  resizer.addEventListener('pointercancel', stopSidebarDrag);
+}
+
 // ── Master Initialization ───────────────────────────────────────────────────
 async function initApp() {
   // 1. Initialize sidebar controller
@@ -459,15 +691,43 @@ async function initApp() {
     window.sidebarController.init();
   }
 
-  // 2. Bind Header & Chat events
+  // 2. Bind Header & Video Loading events
   const loadBtn = document.getElementById('load-video-btn');
   const urlInput = document.getElementById('video-url-input');
-  if (loadBtn) loadBtn.addEventListener('click', () => loadVideo(urlInput.value));
+  if (loadBtn) loadBtn.addEventListener('click', () => loadVideo(urlInput ? urlInput.value : ''));
   if (urlInput) {
     urlInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         loadVideo(urlInput.value);
+      }
+    });
+  }
+
+  // Header quick load button
+  const headerLoadBtn = document.getElementById('header-load-video-modal-btn');
+  if (headerLoadBtn) {
+    headerLoadBtn.addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar && sidebar.classList.contains('collapsed') && window.sidebarController) {
+        window.sidebarController.toggleSidebar();
+      }
+      if (urlInput) {
+        urlInput.focus();
+        urlInput.select();
+      }
+    });
+  }
+
+  // Video placeholder inputs
+  const pLoadBtn = document.getElementById('placeholder-load-btn');
+  const pUrlInput = document.getElementById('placeholder-video-url-input');
+  if (pLoadBtn && pUrlInput) {
+    pLoadBtn.addEventListener('click', () => loadVideo(pUrlInput.value));
+    pUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadVideo(pUrlInput.value);
       }
     });
   }
@@ -550,6 +810,23 @@ async function initApp() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeDeleteModal();
   });
+
+  // Video Delete Confirmation Modal Event Listeners
+  const cancelVidDelBtn = document.getElementById('cancel-video-delete-btn');
+  const confirmVidDelBtn = document.getElementById('confirm-video-delete-btn');
+  const vidDelModal = document.getElementById('video-delete-modal');
+
+  if (cancelVidDelBtn) cancelVidDelBtn.addEventListener('click', closeVideoDeleteModal);
+  if (confirmVidDelBtn) confirmVidDelBtn.addEventListener('click', confirmVideoDelete);
+  if (vidDelModal) {
+    vidDelModal.addEventListener('click', (e) => {
+      if (e.target === vidDelModal) closeVideoDeleteModal();
+    });
+  }
+
+  // Initialize Draggable Panel Resizers
+  initWorkspaceResizer();
+  initSidebarResizer();
 
   // Export Full Chat
   const exportFullBtn = document.getElementById('export-full-chat-btn');

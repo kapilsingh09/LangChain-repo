@@ -129,6 +129,17 @@ class YouTubeController {
     `;
 
     this.iframeElement = document.getElementById('yt-direct-iframe');
+
+    // Send listening handshake once iframe loads
+    if (this.iframeElement) {
+      this.iframeElement.addEventListener('load', () => {
+        try {
+          if (this.iframeElement.contentWindow) {
+            this.iframeElement.contentWindow.postMessage(JSON.stringify({ event: 'listening' }), '*');
+          }
+        } catch (e) {}
+      });
+    }
   }
 
   /**
@@ -142,6 +153,9 @@ class YouTubeController {
       try {
         this.player.seekTo(seconds, true);
         this.player.playVideo();
+        if (window.timelineController) {
+          window.timelineController.updateProgress(seconds, this.getDuration());
+        }
         return;
       } catch (e) {
         console.warn('seekTo error on YT.Player:', e);
@@ -160,6 +174,9 @@ class YouTubeController {
           JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
           '*'
         );
+        if (window.timelineController) {
+          window.timelineController.updateProgress(seconds, this.getDuration());
+        }
         return;
       } catch (e) {
         console.warn('postMessage seek error:', e);
@@ -171,7 +188,80 @@ class YouTubeController {
       this.loadVideo(this.currentVideoId, seconds);
     }
   }
+
+  getCurrentTime() {
+    if (this.player && typeof this.player.getCurrentTime === 'function') {
+      try {
+        return this.player.getCurrentTime() || 0;
+      } catch (e) {}
+    }
+    return this.currentSeconds || 0;
+  }
+
+  getDuration() {
+    if (this.player && typeof this.player.getDuration === 'function') {
+      try {
+        const d = this.player.getDuration();
+        if (d && d > 0) return d;
+      } catch (e) {}
+    }
+    if (this.duration && this.duration > 0) return this.duration;
+    if (window.state && window.state.currentVideo && window.state.currentVideo.duration) {
+      return window.state.currentVideo.duration;
+    }
+    return 0;
+  }
+
+  startProgressLoop() {
+    if (this.progressInterval) clearInterval(this.progressInterval);
+    this.progressInterval = setInterval(() => {
+      let cur = 0;
+      let dur = this.getDuration();
+
+      if (this.player && typeof this.player.getCurrentTime === 'function') {
+        try {
+          cur = this.player.getCurrentTime() || 0;
+          const pDur = this.player.getDuration() || 0;
+          if (pDur > 0) dur = pDur;
+          this.currentSeconds = cur;
+        } catch (e) {}
+      } else {
+        cur = this.currentSeconds || 0;
+      }
+
+      if (dur > 0 && window.timelineController && !window.timelineController.isDragging) {
+        window.timelineController.updateProgress(cur, dur);
+      }
+    }, 250);
+  }
 }
 
 // Global player controller singleton
 window.ytController = new YouTubeController();
+window.ytController.startProgressLoop();
+
+// Listen to YouTube IFrame postMessage events (infoDelivery with real-time seconds & duration)
+window.addEventListener('message', (event) => {
+  try {
+    let data = event.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (e) { return; }
+    }
+    if (data && data.event === 'infoDelivery' && data.info) {
+      if (typeof data.info.currentTime === 'number') {
+        window.ytController.currentSeconds = data.info.currentTime;
+      }
+      if (typeof data.info.duration === 'number' && data.info.duration > 0) {
+        window.ytController.duration = data.info.duration;
+        if (window.timelineController) {
+          window.timelineController.setDuration(data.info.duration);
+        }
+      }
+      if (window.timelineController && !window.timelineController.isDragging) {
+        const d = window.ytController.getDuration();
+        window.timelineController.updateProgress(window.ytController.currentSeconds, d);
+      }
+    }
+  } catch (e) {}
+});
+

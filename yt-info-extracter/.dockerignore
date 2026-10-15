@@ -1,0 +1,54 @@
+# ── Docker Ignore — yt-info-extracter ─────────────────────────────────
+# Prevent secrets, caches, and unnecessary files from entering the image.
+
+# ===== SECRETS (CRITICAL — NEVER BAKE INTO IMAGE) =====
+**/.env
+**/.env.*
+!**/.env.example
+
+# ===== Python Caches =====
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ===== Virtual Environments =====
+.venv/
+venv/
+env/
+ENV/
+
+# ===== SQLite Database (use volume mount instead) =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== IDE & Editor =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Git =====
+.git/
+.gitignore
+
+# ===== Jupyter Notebooks (not needed at runtime) =====
+backend/notebooks/
+*.ipynb
+.ipynb_checkpoints/
+
+# ===== Docker meta =====
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# ===== Generated Artifacts (will be created at runtime) =====
+backend/artifacts/
+
+# ===== OS files =====
+desktop.ini

@@ -1,14 +1,6 @@
 <!-- Top Navigation Bar Component -->
 <header class="h-16 md:h-[72px] bg-chatgpt-main/95 backdrop-blur-md border-b border-chatgpt-borderSubtle flex items-center justify-between px-5 z-40 gap-4 shrink-0 shadow-sm">
   <div class="flex items-center gap-3.5">
-    <!-- Sidebar Toggle Button (ChatGPT style) -->
-    <button id="sidebar-toggle-btn" class="p-2.5 rounded-xl text-chatgpt-textSecondary hover:text-white hover:bg-chatgpt-surface transition-all" title="Toggle sidebar (Ctrl+B)">
-      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect width="18" height="18" x="3" y="3" rx="2" />
-        <path d="M9 3v18" />
-      </svg>
-    </button>
-
     <!-- Brand Logo -->
     <div class="flex items-center gap-3">
       <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-chatgpt-accent to-emerald-400 flex items-center justify-center text-white shadow-md shadow-emerald-900/40 shrink-0">
@@ -23,32 +15,14 @@
     </div>
   </div>
 
-  <!-- YouTube Video Input Bar in Header -->
-  <div class="flex-1 max-w-2xl mx-2">
-    <div class="relative flex items-center">
-      <svg class="w-4 h-4 absolute left-4 text-chatgpt-textMuted pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"/>
-        <path d="m21 21-4.3-4.3"/>
+  <!-- Header Center / Clean Title & Quick Video Action -->
+  <div class="flex-1 flex justify-center max-w-md mx-2">
+    <button id="header-load-video-modal-btn" class="px-3.5 py-1.5 rounded-full bg-chatgpt-surface/90 hover:bg-chatgpt-surfaceHover border border-white/10 text-chatgpt-textSecondary hover:text-white text-xs font-medium transition-all flex items-center gap-2 shadow-sm" title="Index a YouTube Video">
+      <svg class="w-3.5 h-3.5 text-rose-500" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
       </svg>
-      <input 
-        type="text" 
-        id="video-url-input" 
-        placeholder="Paste any YouTube URL (e.g. https://www.youtube.com/watch?v=...)" 
-        class="w-full bg-chatgpt-sidebar border border-chatgpt-border rounded-full pl-11 pr-32 py-2 text-sm text-chatgpt-textPrimary placeholder:text-chatgpt-textMuted focus:outline-none focus:border-chatgpt-accent focus:ring-1 focus:ring-chatgpt-accent transition-all shadow-inner"
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <button 
-        id="load-video-btn" 
-        class="absolute right-1.5 px-3.5 py-1.5 bg-chatgpt-accent hover:bg-chatgpt-accentHover text-white text-xs font-semibold rounded-full transition-all flex items-center gap-1.5 shadow-md shadow-emerald-900/50"
-        title="Fetch transcript, extract timestamps & build FAISS vector index"
-      >
-        <span class="btn-text">Index Video</span>
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </button>
-    </div>
+      <span>Index YouTube Video</span>
+    </button>
   </div>
 
   <!-- Right Header Controls -->

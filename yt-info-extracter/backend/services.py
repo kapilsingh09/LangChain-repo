@@ -13,6 +13,8 @@ from sqlalchemy.orm import selectinload
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
+from dotenv import load_dotenv
 
 from .models import Video, Chat, Message
 from .workflow import get_video_id, get_transcript, build_vector_store, graph, llm
@@ -94,6 +96,15 @@ async def list_videos(db: AsyncSession):
 async def get_video(db: AsyncSession, video_pk: int):
     result = await db.execute(select(Video).where(Video.id == video_pk))
     return result.scalar_one_or_none()
+
+
+async def delete_video(db: AsyncSession, video_pk: int) -> Video | None:
+    result = await db.execute(select(Video).where(Video.id == video_pk))
+    video = result.scalar_one_or_none()
+    if video:
+        await db.delete(video)
+        await db.commit()
+    return video
 
 
 # ── Chat ─────────────────────────────────────────────────────────────
@@ -198,10 +209,37 @@ async def send_message(db: AsyncSession, chat_id: int, content: str):
 
 # ── Markdown export ──────────────────────────────────────────────────
 
+# ── Markdown export (Powered by qwen/qwen3.8-27b) ─────────────────────
+
+def get_export_llm():
+    """
+    Get ChatGroq LLM configured with qwen/qwen3.8-27b using API_KEY_2.
+    Falls back to GROQ_API_KEY_2 or GROQ_API_KEY if API_KEY_2 is not yet populated.
+    """
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=True)
+
+    api_key = (
+        os.getenv("API_KEY_2")
+        or os.getenv("GROQ_API_KEY_2")
+        or os.getenv("GROQ_API_KEY")
+    )
+    if api_key:
+        api_key = api_key.strip("'\" \t\r\n")
+
+    return ChatGroq(
+        model="qwen/qwen3.8-27b",
+        temperature=0.3,
+        max_retries=2,
+        api_key=api_key,
+    )
+
+
 async def generate_md(
     db: AsyncSession, chat_id: int, message_id: int, instruction: str = "auto"
 ) -> str:
-    """Generate a polished .md file for a given AI message."""
+    """Generate a polished, in-depth .md file for a given AI message using qwen/qwen3.8-27b."""
     result = await db.execute(
         select(Message).where(Message.id == message_id, Message.chat_id == chat_id)
     )
@@ -218,31 +256,34 @@ async def generate_md(
     user_msg = result.scalar_one_or_none()
     user_question = user_msg.content if user_msg else ""
 
+    export_llm = get_export_llm()
+
     md_prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "You are an expert technical writer creating a clean `.md` study note "
-                "from the AI's latest response.\n\n"
-                "### SMART DESIGN RULES (FOLLOW STRICTLY):\n"
-                "1. Write clean, natural Markdown using `# Headings`, `> Callout quotes`, "
-                "bullet points, and **bold** key terms.\n"
-                "2. Include a visual ASCII diagram ONLY IF the user explicitly asked for one "
-                "or the topic genuinely needs structural visualization.\n"
-                "3. For comparisons/timestamps use a clean Markdown table.\n\n"
-                "Keep the formatting classy, readable, and well-spaced.",
+                "You are an expert technical writer and research specialist creating a detailed, "
+                "comprehensive `.md` study note from the AI's latest response.\n\n"
+                "### FORMATTING & CONTENT GUIDELINES:\n"
+                "1. Provide a thorough, comprehensive technical summary (do NOT make it brief).\n"
+                "2. Include informative ASCII flowcharts or architecture diagrams inside ```text code blocks "
+                "to clearly visualize concepts, logic flows, or hierarchies.\n"
+                "3. If an accessible online image or reference is relevant, include it using proper markdown syntax "
+                "`![Caption](url)` with a clear citation underneath.\n"
+                "4. Use clean Markdown tables for timestamps, parameter comparisons, or key metrics.\n"
+                "5. Use GitHub callouts (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`) and bold terminology.",
             ),
             (
                 "human",
                 "User's Question: {question}\n\n"
-                "AI's Answer to Convert into Markdown:\n{latest_answer}\n\n"
+                "AI's Answer to Convert into Detailed Markdown:\n{latest_answer}\n\n"
                 "Human-in-the-Loop Extra Instruction: {human_instruction}",
             ),
         ]
     )
 
     md_content = await asyncio.to_thread(
-        lambda: (md_prompt | llm)
+        lambda: (md_prompt | export_llm)
         .invoke(
             {
                 "question": user_question,
@@ -261,3 +302,117 @@ async def generate_md(
     message.md_file_path = filepath
     await db.commit()
     return filepath
+
+
+async def generate_full_chat_md(
+    db: AsyncSession, chat_id: int, instruction: str = "auto"
+) -> str:
+    """
+    Generate an exhaustive, highly detailed .md research report summarizing the entire
+    chat session using qwen/qwen3.8-27b with ASCII flowcharts, tables, and verified image references.
+    """
+    result = await db.execute(
+        select(Chat).where(Chat.id == chat_id).options(selectinload(Chat.video), selectinload(Chat.messages))
+    )
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise ValueError("Chat session not found")
+
+    messages = sorted(chat.messages, key=lambda m: m.id)
+    if not messages:
+        raise ValueError("No messages in this chat to export")
+
+    # Format the chat history into a clean dialogue script
+    dialogue_blocks = []
+    citations_found = []
+    for msg in messages:
+        sender = "User" if msg.role == "user" else f"AI Assistant ({msg.route or 'RAG'})"
+        dialogue_blocks.append(f"### [{sender}]:\n{msg.content}\n")
+        if msg.timestamps:
+            try:
+                import json
+                ts_list = json.loads(msg.timestamps) if isinstance(msg.timestamps, str) else msg.timestamps
+                for item in ts_list:
+                    citations_found.append(f"- {item.get('timestamp')}: cited in response to user query")
+            except Exception:
+                pass
+
+    dialogue_transcript = "\n".join(dialogue_blocks)
+    citations_str = "\n".join(citations_found) if citations_found else "None cited explicitly."
+
+    video_info = "No specific YouTube video attached."
+    if chat.video:
+        video_info = (
+            f"- Video Title: {chat.video.title}\n"
+            f"- Video URL: {chat.video.url}\n"
+            f"- Video ID: {chat.video.video_id}\n"
+            f"- Video Thumbnail URL: https://img.youtube.com/vi/{chat.video.video_id}/maxresdefault.jpg\n"
+        )
+
+    export_llm = get_export_llm()
+
+    system_prompt = (
+        "You are an elite research analyst and master technical writer specializing in producing "
+        "comprehensive, high-value, publication-grade Markdown study notes and research dossiers.\n\n"
+        "Your task is to exhaustively analyze and deeply synthesize the provided conversation between "
+        "a User and an AI Assistant studying a YouTube video.\n\n"
+        "### STRICT STRUCTURAL REQUIREMENTS (MUST ADHERE TO ALL):\n"
+        "1. **COMPREHENSIVE & EXTENSIVE (Lamba & In-Depth)**:\n"
+        "   - Do NOT produce a short or lazy summary. Cover all concepts, technical nuances, "
+        "step-by-step mechanisms, and discoveries made in the chat in great depth.\n"
+        "   - Organize with clear hierarchical Markdown headers (`#`, `##`, `###`, `####`).\n\n"
+        "2. **ASCII DIAGRAMS & FLOWCHARTS (MANDATORY)**:\n"
+        "   - You MUST include one or more well-crafted ASCII art diagrams or process flowcharts inside ```text code blocks "
+        "(e.g. using `┌──┐`, `│`, `└──┘`, `▲`, `▼`, `──►`, `├──`, etc.) to visually represent the core architectures, "
+        "data pipelines, workflows, or mental models discussed.\n\n"
+        "3. **ONLINE ACCESSIBLE IMAGES WITH REFERENCES**:\n"
+        "   - If a video thumbnail URL is provided, include it prominently with a proper markdown image tag and hyperlink citation:\n"
+        "     `[![Video Thumbnail](IMAGE_URL)](VIDEO_URL)`\n"
+        "     `*Figure: Video reference snapshot from source URL*`\n"
+        "   - You may also use verified, publicly accessible online badges (e.g. Shields.io) or diagrams ONLY when accurate and relevant.\n"
+        "   - Every image MUST have an accompanying reference/source note immediately below it.\n\n"
+        "4. **STRUCTURED SECTIONS TO INCLUDE**:\n"
+        "   - `# 📑 [Title] Comprehensive Research Dossier`\n"
+        "   - `## 🎯 Executive Overview & Research Context`\n"
+        "   - `## 🎬 Source Video Reference & Media Metadata`\n"
+        "   - `## 🏗️ Conceptual Architecture & Workflow (ASCII Flowchart)`\n"
+        "   - `## 🔬 Deep Technical Breakdown & Thematic Analysis` (Multiple comprehensive subsections)\n"
+        "   - `## 💡 Full Q&A Synthesis & Dialogue Insights`\n"
+        "   - `## ⏱️ Video Citations & Timestamp Index` (Clean Markdown table: | Timestamp | Topic / Event | Deep Link |)\n"
+        "   - `## 📌 Key Takeaways & Actionable Implementation Roadmap`\n\n"
+        "5. **FORMATTING POLISH**:\n"
+        "   - Use GitHub-style callouts (`> [!NOTE]`, `> [!IMPORTANT]`, `> [!TIP]`).\n"
+        "   - Use code blocks with language identifiers where relevant.\n"
+        "   - Ensure every timestamp is formatted clearly as a reference."
+    )
+
+    human_content = (
+        f"### Research Session Context:\n"
+        f"Chat Title: {chat.title}\n"
+        f"Created At: {chat.created_at}\n\n"
+        f"### Source Media:\n{video_info}\n\n"
+        f"### Explicit Citations Extracted:\n{citations_str}\n\n"
+        f"### User/AI Conversation History to Summarize:\n"
+        f"{dialogue_transcript}\n\n"
+        f"### User's Custom Export Instruction:\n{instruction}\n\n"
+        f"Now produce the complete, exhaustive, deeply detailed Markdown research dossier following all guidelines."
+    )
+
+    md_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            ("human", human_content),
+        ]
+    )
+
+    md_content = await asyncio.to_thread(
+        lambda: (md_prompt | export_llm).invoke({}).content
+    )
+
+    filename = f"research_dossier_chat{chat_id}.md"
+    filepath = os.path.join(ARTIFACTS_DIR, filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(md_content)
+
+    return filepath
+

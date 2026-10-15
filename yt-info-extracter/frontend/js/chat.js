@@ -177,17 +177,78 @@ const chatController = {
   },
 
   /**
-   * Export full session as .md
+   * Export full session as .md using Qwen 27B summarization
    */
-  exportFullChat() {
+  async exportFullChat() {
     if (!window.state || !window.state.currentChat || !window.state.currentChat.messages || window.state.currentChat.messages.length === 0) {
-      if (window.showToast) window.showToast('No messages to export yet', 'info');
+      if (window.showToast) window.showToast('No messages in this chat to export yet. Ask questions first!', 'info');
       return;
     }
 
+    const exportFullBtn = document.getElementById('export-full-chat-btn');
+    let originalHtml = '';
+    if (exportFullBtn) {
+      originalHtml = exportFullBtn.innerHTML;
+      exportFullBtn.innerHTML = `
+        <svg class="w-3.5 h-3.5 animate-spin text-chatgpt-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+        </svg>
+        <span>Summarizing with Qwen 27B...</span>
+      `;
+      exportFullBtn.disabled = true;
+    }
+
+    if (window.showToast) {
+      window.showToast('Synthesizing exhaustive Markdown dossier via Qwen 27B (ASCII diagrams & citations)... Please wait.', 'info');
+    }
+
+    try {
+      const res = await fetch(`/api/chats/${window.state.currentChat.id}/export-md`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction: 'comprehensive' }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Full chat export failed');
+      }
+
+      const data = await res.json();
+      const downloadUrl = data.download_url || `/api/chats/${window.state.currentChat.id}/download-full-md`;
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = data.filename || `research_dossier_chat_${window.state.currentChat.id}.md`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      if (window.showToast) {
+        window.showToast('Full chat summarized & downloaded as .md using Qwen 27B!', 'success');
+      }
+    } catch (err) {
+      console.warn('Qwen backend export notice:', err);
+      if (window.showToast) {
+        window.showToast(`Qwen export note: ${err.message}. Exporting standard Markdown session...`, 'warning');
+      }
+      this.exportFullChatLocalFallback();
+    } finally {
+      if (exportFullBtn) {
+        exportFullBtn.innerHTML = originalHtml;
+        exportFullBtn.disabled = false;
+      }
+    }
+  },
+
+  /**
+   * Local markdown export fallback if backend/model is offline
+   */
+  exportFullChatLocalFallback() {
     let mdContent = `# Research Session: ${window.state.currentChat.title}\n`;
     if (window.state.currentVideo) {
       mdContent += `**Video:** [${window.state.currentVideo.title}](${window.state.currentVideo.url})\n`;
+      mdContent += `[![Video Thumbnail](https://img.youtube.com/vi/${window.state.currentVideo.video_id}/maxresdefault.jpg)](${window.state.currentVideo.url})\n\n`;
     }
     mdContent += `**Export Date:** ${new Date().toLocaleString()}\n\n---\n\n`;
 
@@ -208,9 +269,8 @@ const chatController = {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
-    if (window.showToast) window.showToast('Full chat exported as .md!', 'success');
   }
 };
+
 
 window.chatController = chatController;

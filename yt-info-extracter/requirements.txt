@@ -1,0 +1,35 @@
+# ── YouTube Researcher — Python Dependencies ──────────────────────────
+# Core Web Framework
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# Async Database
+sqlalchemy[asyncio]>=2.0
+aiosqlite>=0.20
+
+# LangChain + LangGraph
+langchain-core>=0.3
+langchain-groq>=0.2
+langchain-community>=0.3
+langchain-text-splitters>=0.3
+langchain-huggingface>=0.1
+langgraph>=0.2
+
+# Vector Store
+faiss-cpu>=1.8
+
+# YouTube Transcript
+youtube-transcript-api>=1.0
+
+# Embeddings (HuggingFace Sentence Transformers)
+sentence-transformers>=3.0
+torch>=2.0
+
+# HTTP client
+httpx>=0.27
+
+# Environment
+python-dotenv>=1.0
+
+# Schema Validation (comes with FastAPI but pinned for clarity)
+pydantic>=2.0
