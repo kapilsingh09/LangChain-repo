@@ -1,0 +1,53 @@
+<!-- Comparison View Component -->
+<main id="view-compare" class="flex-1 flex flex-col h-full bg-chatgpt-main overflow-hidden hidden">
+  <!-- Compare Selector Header -->
+  <div class="p-4 border-b border-chatgpt-borderSubtle bg-chatgpt-sidebar flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h2 class="text-sm font-bold text-white">Side-by-Side Chat Comparison</h2>
+      <p class="text-xs text-chatgpt-textMuted">Analyze two research sessions side-by-side to cross-reference findings.</p>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-chatgpt-textSecondary">Chat A:</span>
+        <select id="compare-select-left" class="bg-chatgpt-surface border border-chatgpt-border text-xs text-white rounded-lg px-2.5 py-1.5 outline-none focus:border-chatgpt-accent"></select>
+      </div>
+
+      <span class="text-xs font-bold text-chatgpt-accent px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">VS</span>
+
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-chatgpt-textSecondary">Chat B:</span>
+        <select id="compare-select-right" class="bg-chatgpt-surface border border-chatgpt-border text-xs text-white rounded-lg px-2.5 py-1.5 outline-none focus:border-chatgpt-accent"></select>
+      </div>
+
+      <button id="run-compare-btn" class="px-3.5 py-1.5 bg-chatgpt-accent hover:bg-chatgpt-accentHover text-white text-xs font-medium rounded-lg transition-all shadow-sm">
+        Load Comparison
+      </button>
+    </div>
+  </div>
+
+  <!-- Compare Grid Columns -->
+  <div class="flex-1 grid grid-cols-2 overflow-hidden divide-x divide-chatgpt-borderSubtle">
+    <!-- Left Session Column -->
+    <div class="flex flex-col overflow-hidden h-full bg-chatgpt-main">
+      <div class="p-3 border-b border-chatgpt-borderSubtle bg-chatgpt-card/60 flex flex-col gap-0.5">
+        <h4 id="col-left-title" class="text-xs font-semibold text-white">Select a chat on the left</h4>
+        <span id="col-left-meta" class="text-[11px] text-chatgpt-accent"></span>
+      </div>
+      <div id="col-left-messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+        <div class="text-center text-xs text-chatgpt-textMuted p-6">Choose session above</div>
+      </div>
+    </div>
+
+    <!-- Right Session Column -->
+    <div class="flex flex-col overflow-hidden h-full bg-chatgpt-main">
+      <div class="p-3 border-b border-chatgpt-borderSubtle bg-chatgpt-card/60 flex flex-col gap-0.5">
+        <h4 id="col-right-title" class="text-xs font-semibold text-white">Select a chat on the right</h4>
+        <span id="col-right-meta" class="text-[11px] text-chatgpt-accent"></span>
+      </div>
+      <div id="col-right-messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+        <div class="text-center text-xs text-chatgpt-textMuted p-6">Choose session above</div>
+      </div>
+    </div>
+  </div>
+</main>

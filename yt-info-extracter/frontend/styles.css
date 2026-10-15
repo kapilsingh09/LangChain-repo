@@ -1,0 +1,334 @@
+/* ==========================================================================
+   YouTube Researcher — ChatGPT Theme Complementary Styles & Utilities
+   ========================================================================== */
+
+/* ── Custom Scrollbars (ChatGPT Sleek Style) ──────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── Slidable / Collapsible Sidebar Transitions ───────────────────── */
+#sidebar {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease-in-out;
+}
+
+#sidebar.collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  padding: 0 !important;
+  border-right-width: 0 !important;
+  opacity: 0 !important;
+  transform: translateX(-100%);
+  pointer-events: none;
+  overflow: hidden !important;
+}
+
+/* ── Video Dock Panel Slidable Transition ─────────────────────────── */
+#video-dock-panel {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease-in-out;
+}
+
+#video-dock-panel.collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  border-right-width: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none;
+}
+
+/* ── ChatGPT Conversation Messages ────────────────────────────────── */
+.message-row {
+  display: flex;
+  width: 100%;
+  max-width: 48rem; /* max-w-3xl */
+  margin-left: auto;
+  margin-right: auto;
+  animation: messageIn 0.25s ease-out;
+}
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message-row.user {
+  justify-content: flex-end;
+}
+
+.message-row.assistant {
+  justify-content: flex-start;
+}
+
+/* User Message Bubble */
+.user-bubble {
+  background-color: #2f2f2f;
+  color: #f3f4f6;
+  padding: 10px 16px;
+  border-radius: 1.25rem;
+  border-bottom-right-radius: 0.35rem;
+  max-width: 82%;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Assistant Message Layout */
+.assistant-container {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+}
+
+.assistant-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #10a37f 0%, #059669 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(16, 163, 127, 0.3);
+  margin-top: 2px;
+}
+
+.assistant-content-wrap {
+  flex: 1;
+  overflow: hidden;
+  background-color: transparent;
+}
+
+/* ── Markdown Typography (ChatGPT Standard) ───────────────────────── */
+.markdown-body {
+  color: #ececec;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  color: #ffffff;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body h1 { font-size: 1.25rem; }
+.markdown-body h2 { font-size: 1.1rem; }
+.markdown-body h3 { font-size: 1rem; }
+
+.markdown-body p {
+  margin-bottom: 0.85rem;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body ul, .markdown-body ol {
+  margin-bottom: 0.85rem;
+  padding-left: 1.5rem;
+}
+
+.markdown-body li {
+  margin-bottom: 0.35rem;
+}
+
+.markdown-body code {
+  font-family: 'JetBrains Mono', monospace;
+  background-color: rgba(0, 0, 0, 0.4);
+  color: #38bdf8;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.markdown-body pre {
+  background-color: #171717;
+  border: 1px solid #383838;
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  margin: 0.85rem 0;
+}
+
+.markdown-body pre code {
+  background-color: transparent;
+  color: #f3f4f6;
+  padding: 0;
+  border: none;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid #10a37f;
+  padding-left: 1rem;
+  margin: 0.85rem 0;
+  color: #a3a3a3;
+  font-style: italic;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.825rem;
+}
+
+.markdown-body th, .markdown-body td {
+  border: 1px solid #383838;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.markdown-body th {
+  background-color: #262626;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* ── Interactive Timestamp Pill (ChatGPT Accent) ─────────────────── */
+.timestamp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  margin: 0 2px;
+  border-radius: 9999px;
+  background-color: rgba(16, 163, 127, 0.15);
+  border: 1px solid rgba(16, 163, 127, 0.35);
+  color: #6ee7b7;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: baseline;
+  text-decoration: none;
+}
+
+.timestamp-pill::before {
+  content: '▶';
+  font-size: 0.55rem;
+  color: #10a37f;
+}
+
+.timestamp-pill:hover {
+  background-color: #10a37f;
+  color: white;
+  border-color: #10a37f;
+  box-shadow: 0 0 10px rgba(16, 163, 127, 0.4);
+  transform: translateY(-1px);
+}
+
+.timestamp-pill:hover::before {
+  color: white;
+}
+
+/* ── Route Badges ─────────────────────────────────────────────────── */
+.route-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.route-badge.rag {
+  background-color: rgba(16, 163, 127, 0.15);
+  border: 1px solid rgba(16, 163, 127, 0.3);
+  color: #34d399;
+}
+
+.route-badge.direct {
+  background-color: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.route-badge.general {
+  background-color: rgba(163, 163, 163, 0.15);
+  border: 1px solid rgba(163, 163, 163, 0.3);
+  color: #d4d4d4;
+}
+
+/* ── Sidebar Chat Item ────────────────────────────────────────────── */
+.sidebar-chat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 0.5rem;
+  color: #d4d4d4;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 0.8125rem;
+  border: 1px solid transparent;
+}
+
+.sidebar-chat-item:hover {
+  background-color: #262626;
+  color: #ffffff;
+}
+
+.sidebar-chat-item.active {
+  background-color: #2f2f2f;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* ── Toast Notifications ──────────────────────────────────────────── */
+.toast {
+  pointer-events: auto;
+  padding: 8px 14px;
+  border-radius: 0.5rem;
+  background-color: #2f2f2f;
+  border: 1px solid #424242;
+  color: #ffffff;
+  font-size: 0.8125rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toastSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 22rem;
+}
+
+@keyframes toastSlide {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toast.success { border-color: rgba(16, 163, 127, 0.5); }
+.toast.success .toast-icon { color: #10a37f; }
+.toast.error { border-color: rgba(239, 68, 68, 0.5); }
+.toast.error .toast-icon { color: #ef4444; }
