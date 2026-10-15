@@ -103,7 +103,8 @@ async def create_chat(db: AsyncSession, video_id: int, title: str = "New Chat") 
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
-    return chat
+    # Eagerly load relationship so Pydantic serialization doesn't trigger MissingGreenlet
+    return await get_chat_with_messages(db, chat.id)
 
 
 async def list_chats(db: AsyncSession, video_id: int | None = None):

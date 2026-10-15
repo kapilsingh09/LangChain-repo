@@ -26,6 +26,31 @@
     </div>
   </div>
 
+  <!-- YouTube Interactive Timeline Scrubber & Question Heat Markers -->
+  <div id="yt-timeline-hub" class="yt-timeline-container">
+    <div class="flex items-center justify-between text-[11px] text-chatgpt-textMuted px-0.5">
+      <div class="flex items-center gap-1.5 font-mono">
+        <span id="timeline-current-time" class="text-white font-semibold">0:00</span>
+        <span class="text-neutral-500">/</span>
+        <span id="timeline-duration-time" class="text-neutral-400">0:00</span>
+      </div>
+      <div class="flex items-center gap-1.5" id="timeline-markers-legend">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50"></span>
+        <span id="timeline-markers-count" class="text-[10px] text-emerald-400 font-semibold tracking-wide">0 Questions Marked</span>
+      </div>
+    </div>
+
+    <!-- Timeline Scrubber Track with Interactive Pins -->
+    <div id="timeline-scrubber-bar" class="yt-timeline-bar-wrapper" title="Click anywhere to jump video time">
+      <div class="yt-timeline-track" id="timeline-track">
+        <div id="timeline-progress" class="yt-timeline-progress"></div>
+        <div id="timeline-scrubber-dot" class="yt-timeline-scrubber"></div>
+        <!-- Question & Citation Marker Pins Layer -->
+        <div id="timeline-markers-layer" class="absolute inset-0 pointer-events-none"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Media Hub Tabs (Transcript & Citations) -->
   <div class="flex-1 flex flex-col overflow-hidden bg-chatgpt-sidebar/40">
     <div class="flex border-b border-chatgpt-borderSubtle bg-chatgpt-sidebar px-3">

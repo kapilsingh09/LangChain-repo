@@ -508,6 +508,43 @@
 
   </div>
 
+  <!-- Delete Chat Confirmation Modal Box -->
+  <div id="delete-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-chatgpt-card border border-chatgpt-border rounded-2xl max-w-sm w-full p-5 shadow-2xl flex flex-col gap-4" id="delete-modal-box">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <line x1="10" y1="11" x2="10" y2="17"/>
+            <line x1="14" y1="11" x2="14" y2="17"/>
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white">Delete Chat?</h3>
+          <p class="text-xs text-chatgpt-textMuted mt-0.5">This action cannot be undone.</p>
+        </div>
+      </div>
+
+      <p class="text-xs text-chatgpt-textSecondary leading-relaxed">
+        Are you sure you want to delete <span id="delete-chat-name" class="font-semibold text-white">this session</span>? All messages will be permanently removed.
+      </p>
+
+      <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-chatgpt-borderSubtle">
+        <button id="cancel-delete-btn" class="px-3.5 py-1.5 rounded-lg text-xs font-medium text-chatgpt-textSecondary hover:text-white bg-chatgpt-surface hover:bg-chatgpt-surfaceHover border border-chatgpt-border transition-all">
+          Cancel
+        </button>
+        <button id="confirm-delete-btn" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-900/40 transition-all flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+          </svg>
+          <span>Delete</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast-container" class="fixed bottom-5 right-5 flex flex-col gap-2 z-50 pointer-events-none"></div>
 

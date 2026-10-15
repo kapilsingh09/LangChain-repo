@@ -269,15 +269,30 @@ function renderChatList(chats) {
     `;
 
     item.addEventListener('click', () => selectChat(chat.id));
-    item.querySelector('button').addEventListener('click', async (e) => {
+    item.querySelector('button').addEventListener('click', (e) => {
       e.stopPropagation();
-      if (confirm(`Delete chat "${chat.title}"?`)) {
-        await deleteChat(chat.id);
-      }
+      openDeleteModal(chat.id, chat.title);
     });
 
     container.appendChild(item);
   });
+}
+
+// ── Custom Delete Confirmation Modal ─────────────────────────────────────────
+let pendingDeleteChatId = null;
+
+function openDeleteModal(chatId, chatTitle) {
+  pendingDeleteChatId = chatId;
+  const modal = document.getElementById('delete-modal');
+  const nameEl = document.getElementById('delete-chat-name');
+  if (nameEl) nameEl.textContent = `"${chatTitle}"`;
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeDeleteModal() {
+  pendingDeleteChatId = null;
+  const modal = document.getElementById('delete-modal');
+  if (modal) modal.classList.add('hidden');
 }
 
 window.createNewChat = async function(videoId, title = 'New Research Chat') {
@@ -500,12 +515,41 @@ async function initApp() {
   if (newChatBtn) {
     newChatBtn.addEventListener('click', () => {
       if (!window.state.currentVideo) {
-        window.showToast('Please load a video first', 'info');
+        if (window.state.allVideos && window.state.allVideos.length > 0) {
+          const first = window.state.allVideos[0];
+          window.createNewChat(first.id, 'New Research Chat');
+          return;
+        }
+        window.showToast('Please load a video first to start researching', 'info');
         return;
       }
       window.createNewChat(window.state.currentVideo.id, 'New Research Chat');
     });
   }
+
+  // Delete Confirmation Modal Event Listeners
+  const cancelDelBtn = document.getElementById('cancel-delete-btn');
+  const confirmDelBtn = document.getElementById('confirm-delete-btn');
+  const delModal = document.getElementById('delete-modal');
+
+  if (cancelDelBtn) cancelDelBtn.addEventListener('click', closeDeleteModal);
+  if (confirmDelBtn) {
+    confirmDelBtn.addEventListener('click', async () => {
+      if (pendingDeleteChatId) {
+        const idToDelete = pendingDeleteChatId;
+        closeDeleteModal();
+        await deleteChat(idToDelete);
+      }
+    });
+  }
+  if (delModal) {
+    delModal.addEventListener('click', (e) => {
+      if (e.target === delModal) closeDeleteModal();
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDeleteModal();
+  });
 
   // Export Full Chat
   const exportFullBtn = document.getElementById('export-full-chat-btn');
