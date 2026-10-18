@@ -531,40 +531,85 @@ async function handleSendMessage(content) {
   if (container) container.scrollTop = container.scrollHeight;
 
   try {
-    const res = await fetch(`/api/chats/${window.state.currentChat.id}/messages`, {
+    const res = await fetch(`/api/chats/${window.state.currentChat.id}/messages/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: text }),
     });
 
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({ detail: 'Failed to connect stream' }));
       throw new Error(err.detail || 'Failed to get response');
     }
 
-    const data = await res.json();
+    if (loading) loading.classList.add('hidden');
 
-    const tempUserEl = container ? container.querySelector('[data-msg-id="temp-user"]') : null;
-    if (tempUserEl) tempUserEl.remove();
+    const streamingBubble = window.chatController && container
+      ? window.chatController.createStreamingBubble(container, 'rag')
+      : null;
 
-    if (window.chatController && container) {
-      window.chatController.appendMessageBubble(data.user_message, container);
-      window.chatController.appendMessageBubble(data.ai_message, container);
-    }
+    if (container) container.scrollTop = container.scrollHeight;
 
-    if (data.ai_message.timestamps_json) {
-      window.state.citations.push(...data.ai_message.timestamps_json);
-      updateCitationsTab();
-    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedContent = '';
+    let buffer = '';
 
-    if (window.timelineController && window.state.currentChat) {
-      if (!window.state.currentChat.messages) window.state.currentChat.messages = [];
-      window.state.currentChat.messages.push(data.user_message, data.ai_message);
-      window.timelineController.renderMarkers(window.state.currentChat.messages);
-    }
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
 
-    if (window.state.currentVideo) {
-      fetchChatsForVideo(window.state.currentVideo.id);
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep partial line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const jsonStr = trimmed.replace(/^data:\s*/, '');
+        try {
+          const event = JSON.parse(jsonStr);
+
+          if (event.type === 'user_message') {
+            const tempUserEl = container ? container.querySelector('[data-msg-id="temp-user"]') : null;
+            if (tempUserEl) tempUserEl.remove();
+            if (window.chatController && container && streamingBubble) {
+              const userRow = document.createElement('div');
+              userRow.className = 'message-row user';
+              userRow.dataset.msgId = event.message.id;
+              userRow.innerHTML = `<div class="user-bubble">${window.chatController.escapeHtml(event.message.content)}</div>`;
+              container.insertBefore(userRow, streamingBubble.element);
+            }
+          } else if (event.type === 'route') {
+            if (streamingBubble) streamingBubble.setRoute(event.route);
+          } else if (event.type === 'delta') {
+            accumulatedContent += event.content;
+            if (streamingBubble) streamingBubble.updateContent(accumulatedContent);
+            if (container) container.scrollTop = container.scrollHeight;
+          } else if (event.type === 'done') {
+            const aiMsg = event.ai_message;
+            if (streamingBubble) {
+              streamingBubble.finalize(aiMsg);
+            }
+            if (aiMsg.timestamps_json) {
+              window.state.citations.push(...aiMsg.timestamps_json);
+              updateCitationsTab();
+            }
+            if (window.timelineController && window.state.currentChat) {
+              if (!window.state.currentChat.messages) window.state.currentChat.messages = [];
+              window.state.currentChat.messages.push(aiMsg);
+              window.timelineController.renderMarkers(window.state.currentChat.messages);
+            }
+            if (window.state.currentVideo) {
+              fetchChatsForVideo(window.state.currentVideo.id);
+            }
+          } else if (event.type === 'error') {
+            throw new Error(event.message);
+          }
+        } catch (parseErr) {
+          console.warn('SSE Parse warning:', parseErr);
+        }
+      }
     }
   } catch (err) {
     console.error(err);

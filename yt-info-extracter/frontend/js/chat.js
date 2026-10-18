@@ -50,6 +50,72 @@ const chatController = {
   },
 
   /**
+   * Create an interactive streaming bubble that updates in real-time as tokens arrive
+   */
+  createStreamingBubble(container, initialRoute = 'rag') {
+    const row = document.createElement('div');
+    row.className = 'message-row assistant streaming';
+    row.dataset.msgId = 'streaming-ai';
+
+    const routeClass = initialRoute ? initialRoute.toLowerCase() : 'rag';
+    const routeLabel = initialRoute === 'rag' ? 'Vector RAG' :
+                       initialRoute === 'research' ? 'Deep Research' :
+                       initialRoute === 'summarize' ? 'Video Summary' :
+                       initialRoute === 'chat' ? 'Assistant' :
+                       initialRoute === 'direct' ? 'Direct Context' : 'LangGraph';
+
+    row.innerHTML = `
+      <div class="assistant-container">
+        <div class="assistant-avatar">
+          <svg class="w-4 h-4 animate-pulse text-chatgpt-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.5v-9l6 4.5-6 4.5z"/>
+          </svg>
+        </div>
+
+        <div class="assistant-content-wrap">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-semibold text-xs text-white">YouTube Researcher</span>
+            <span class="route-badge ${routeClass}">${routeLabel}</span>
+            <span class="text-[11px] text-chatgpt-textMuted">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+
+          <div class="markdown-body stream-target">
+            <span class="inline-block w-2 h-4 bg-chatgpt-accent animate-pulse align-middle"></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.appendChild(row);
+
+    const badgeEl = row.querySelector('.route-badge');
+    const contentEl = row.querySelector('.stream-target');
+
+    return {
+      element: row,
+      setRoute: (route) => {
+        if (!badgeEl) return;
+        const rClass = route ? route.toLowerCase() : 'rag';
+        const rLabel = route === 'rag' ? 'Vector RAG' :
+                       route === 'research' ? 'Deep Research' :
+                       route === 'summarize' ? 'Video Summary' :
+                       route === 'chat' ? 'Assistant' :
+                       route === 'direct' ? 'Direct Context' : 'LangGraph';
+        badgeEl.className = `route-badge ${rClass}`;
+        badgeEl.textContent = rLabel;
+      },
+      updateContent: (rawMarkdown) => {
+        if (!contentEl) return;
+        contentEl.innerHTML = this.renderMarkdownWithTimestamps(rawMarkdown) + '<span class="inline-block w-1.5 h-3.5 bg-emerald-400 animate-pulse ml-1 align-baseline"></span>';
+      },
+      finalize: (aiMessage) => {
+        row.remove();
+        this.appendMessageBubble(aiMessage, container);
+      }
+    };
+  },
+
+  /**
    * Append a single message bubble into container
    */
   appendMessageBubble(msg, container) {
@@ -65,7 +131,11 @@ const chatController = {
       `;
     } else {
       const routeClass = msg.route ? msg.route.toLowerCase() : 'rag';
-      const routeLabel = msg.route === 'rag' ? 'Vector RAG' : msg.route === 'direct' ? 'Direct Context' : 'LangGraph';
+      const routeLabel = msg.route === 'rag' ? 'Vector RAG' :
+                         msg.route === 'research' ? 'Deep Research' :
+                         msg.route === 'summarize' ? 'Video Summary' :
+                         msg.route === 'chat' ? 'Assistant' :
+                         msg.route === 'direct' ? 'Direct Context' : 'LangGraph';
       const formattedHtml = this.renderMarkdownWithTimestamps(msg.content);
 
       row.innerHTML = `

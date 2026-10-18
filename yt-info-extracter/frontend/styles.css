@@ -584,10 +584,32 @@ body.is-resizing iframe {
   text-transform: uppercase;
 }
 
+.message-row.streaming .stream-target {
+  min-height: 24px;
+}
+
 .route-badge.rag {
   background-color: rgba(16, 163, 127, 0.15);
   border: 1px solid rgba(16, 163, 127, 0.3);
   color: #34d399;
+}
+
+.route-badge.research {
+  background-color: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  color: #a78bfa;
+}
+
+.route-badge.summarize {
+  background-color: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.route-badge.chat {
+  background-color: rgba(163, 163, 163, 0.15);
+  border: 1px solid rgba(163, 163, 163, 0.3);
+  color: #d4d4d4;
 }
 
 .route-badge.direct {

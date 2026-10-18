@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,7 @@ from .services import (
     get_chat_with_messages,
     delete_chat,
     send_message,
+    stream_message,
     generate_md,
     generate_full_chat_md,
 )
@@ -151,6 +152,24 @@ async def api_send_message(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/chats/{chat_id}/messages/stream")
+async def api_stream_message(
+    chat_id: int, data: MessageCreate, db: AsyncSession = Depends(get_db)
+):
+    """
+    Stream AI responses token-by-token via Server-Sent Events (SSE) for ultra-smooth UI updates.
+    """
+    return StreamingResponse(
+        stream_message(db, chat_id, data.content),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Markdown export / download ───────────────────────────────────────

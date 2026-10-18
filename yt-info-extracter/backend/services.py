@@ -2,6 +2,7 @@
 Business logic — video loading, chat management, message handling, MD export.
 """
 import asyncio
+import json
 import os
 import re
 from datetime import datetime, timezone
@@ -17,7 +18,15 @@ from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 
 from .models import Video, Chat, Message
-from .workflow import get_video_id, get_transcript, build_vector_store, graph, llm
+from .workflow import (
+    get_video_id,
+    get_transcript,
+    build_vector_store,
+    graph,
+    llm,
+    stream_chat_response,
+)
+from .prompts import MD_SINGLE_MESSAGE_SYSTEM_PROMPT, MD_FULL_CHAT_SYSTEM_PROMPT
 
 ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")
 os.makedirs(ARTIFACTS_DIR, exist_ok=True)
@@ -207,6 +216,82 @@ async def send_message(db: AsyncSession, chat_id: int, content: str):
     return user_msg, ai_msg
 
 
+async def stream_message(db: AsyncSession, chat_id: int, content: str):
+    """
+    Stream user and AI messages with real-time SSE chunks.
+    Yields Server-Sent Event strings:
+      - user_message
+      - route
+      - delta
+      - done
+      - error
+    """
+    chat = await get_chat_with_messages(db, chat_id)
+    if not chat:
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Chat not found'})}\n\n"
+        return
+
+    video = await get_video(db, chat.video_id)
+    if not video:
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Video not found'})}\n\n"
+        return
+
+    # Build LangChain message list
+    lc_messages = []
+    for msg in chat.messages:
+        if msg.role == "user":
+            lc_messages.append(HumanMessage(content=msg.content))
+        else:
+            lc_messages.append(AIMessage(content=msg.content))
+    lc_messages.append(HumanMessage(content=content))
+
+    # Persist user message first
+    user_msg = Message(chat_id=chat_id, role="user", content=content)
+    db.add(user_msg)
+    await db.commit()
+    await db.refresh(user_msg)
+
+    # Emit user message confirmed event
+    yield f"data: {json.dumps({'type': 'user_message', 'message': {'id': user_msg.id, 'chat_id': user_msg.chat_id, 'role': user_msg.role, 'content': user_msg.content, 'created_at': user_msg.created_at.isoformat()}})}\n\n"
+
+    accumulated_content = []
+    current_route = "rag"
+
+    try:
+        async for event in stream_chat_response(lc_messages, video.transcript_text, video.video_id):
+            if event["type"] == "route":
+                current_route = event["route"]
+                yield f"data: {json.dumps(event)}\n\n"
+            elif event["type"] == "delta":
+                accumulated_content.append(event["content"])
+                yield f"data: {json.dumps(event)}\n\n"
+
+        full_content = "".join(accumulated_content)
+        timestamps = extract_timestamps(full_content)
+
+        ai_msg = Message(
+            chat_id=chat_id,
+            role="assistant",
+            content=full_content,
+            route=current_route,
+            timestamps_json=timestamps,
+        )
+        db.add(ai_msg)
+
+        if len(chat.messages) <= 1:
+            chat.title = content[:60] + ("…" if len(content) > 60 else "")
+        chat.updated_at = datetime.now(timezone.utc)
+
+        await db.commit()
+        await db.refresh(ai_msg)
+
+        yield f"data: {json.dumps({'type': 'done', 'ai_message': {'id': ai_msg.id, 'chat_id': ai_msg.chat_id, 'role': ai_msg.role, 'content': ai_msg.content, 'route': ai_msg.route, 'timestamps_json': timestamps, 'created_at': ai_msg.created_at.isoformat()}})}\n\n"
+
+    except Exception as e:
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+
+
 # ── Markdown export ──────────────────────────────────────────────────
 
 # ── Markdown export (Powered by qwen/qwen3.8-27b) ─────────────────────
@@ -260,19 +345,7 @@ async def generate_md(
 
     md_prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are an expert technical writer and research specialist creating a detailed, "
-                "comprehensive `.md` study note from the AI's latest response.\n\n"
-                "### FORMATTING & CONTENT GUIDELINES:\n"
-                "1. Provide a thorough, comprehensive technical summary (do NOT make it brief).\n"
-                "2. Include informative ASCII flowcharts or architecture diagrams inside ```text code blocks "
-                "to clearly visualize concepts, logic flows, or hierarchies.\n"
-                "3. If an accessible online image or reference is relevant, include it using proper markdown syntax "
-                "`![Caption](url)` with a clear citation underneath.\n"
-                "4. Use clean Markdown tables for timestamps, parameter comparisons, or key metrics.\n"
-                "5. Use GitHub callouts (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`) and bold terminology.",
-            ),
+            ("system", MD_SINGLE_MESSAGE_SYSTEM_PROMPT),
             (
                 "human",
                 "User's Question: {question}\n\n"
@@ -351,40 +424,7 @@ async def generate_full_chat_md(
 
     export_llm = get_export_llm()
 
-    system_prompt = (
-        "You are an elite research analyst and master technical writer specializing in producing "
-        "comprehensive, high-value, publication-grade Markdown study notes and research dossiers.\n\n"
-        "Your task is to exhaustively analyze and deeply synthesize the provided conversation between "
-        "a User and an AI Assistant studying a YouTube video.\n\n"
-        "### STRICT STRUCTURAL REQUIREMENTS (MUST ADHERE TO ALL):\n"
-        "1. **COMPREHENSIVE & EXTENSIVE (Lamba & In-Depth)**:\n"
-        "   - Do NOT produce a short or lazy summary. Cover all concepts, technical nuances, "
-        "step-by-step mechanisms, and discoveries made in the chat in great depth.\n"
-        "   - Organize with clear hierarchical Markdown headers (`#`, `##`, `###`, `####`).\n\n"
-        "2. **ASCII DIAGRAMS & FLOWCHARTS (MANDATORY)**:\n"
-        "   - You MUST include one or more well-crafted ASCII art diagrams or process flowcharts inside ```text code blocks "
-        "(e.g. using `┌──┐`, `│`, `└──┘`, `▲`, `▼`, `──►`, `├──`, etc.) to visually represent the core architectures, "
-        "data pipelines, workflows, or mental models discussed.\n\n"
-        "3. **ONLINE ACCESSIBLE IMAGES WITH REFERENCES**:\n"
-        "   - If a video thumbnail URL is provided, include it prominently with a proper markdown image tag and hyperlink citation:\n"
-        "     `[![Video Thumbnail](IMAGE_URL)](VIDEO_URL)`\n"
-        "     `*Figure: Video reference snapshot from source URL*`\n"
-        "   - You may also use verified, publicly accessible online badges (e.g. Shields.io) or diagrams ONLY when accurate and relevant.\n"
-        "   - Every image MUST have an accompanying reference/source note immediately below it.\n\n"
-        "4. **STRUCTURED SECTIONS TO INCLUDE**:\n"
-        "   - `# 📑 [Title] Comprehensive Research Dossier`\n"
-        "   - `## 🎯 Executive Overview & Research Context`\n"
-        "   - `## 🎬 Source Video Reference & Media Metadata`\n"
-        "   - `## 🏗️ Conceptual Architecture & Workflow (ASCII Flowchart)`\n"
-        "   - `## 🔬 Deep Technical Breakdown & Thematic Analysis` (Multiple comprehensive subsections)\n"
-        "   - `## 💡 Full Q&A Synthesis & Dialogue Insights`\n"
-        "   - `## ⏱️ Video Citations & Timestamp Index` (Clean Markdown table: | Timestamp | Topic / Event | Deep Link |)\n"
-        "   - `## 📌 Key Takeaways & Actionable Implementation Roadmap`\n\n"
-        "5. **FORMATTING POLISH**:\n"
-        "   - Use GitHub-style callouts (`> [!NOTE]`, `> [!IMPORTANT]`, `> [!TIP]`).\n"
-        "   - Use code blocks with language identifiers where relevant.\n"
-        "   - Ensure every timestamp is formatted clearly as a reference."
-    )
+    system_prompt = MD_FULL_CHAT_SYSTEM_PROMPT
 
     human_content = (
         f"### Research Session Context:\n"

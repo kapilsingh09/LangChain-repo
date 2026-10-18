@@ -6,6 +6,7 @@ Graph:  START → router_node → (chat_node | rag_node | summarizer_node) → E
 Markdown export is handled as a separate service call (not a graph node)
 so the API can trigger it on‑demand instead of using interrupt_before.
 """
+import asyncio
 import os
 import re
 from typing import Annotated, Literal
@@ -30,8 +31,19 @@ from langgraph.graph.message import add_messages
 
 from dotenv import load_dotenv
 
-# Load .env from the same directory as this file
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+from .prompts import (
+    ROUTER_SYSTEM_PROMPT,
+    CHAT_SYSTEM_PROMPT,
+    RAG_SYSTEM_PROMPT,
+    SUMMARIZER_SYSTEM_PROMPT,
+    RESEARCH_SYSTEM_PROMPT,
+)
+from .search import (
+    is_tavily_configured,
+    generate_search_query,
+    search_tavily,
+    format_web_context,
+)
 
 # ── Embedding model (loaded once at import time) ─────────────────────
 _embedding = None
@@ -46,16 +58,28 @@ def _get_embedding():
     return _embedding
 
 
+# Load .env from the same directory as this file
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path, override=True)
+
 # ── LLM ──────────────────────────────────────────────────────────────
-llm = ChatGroq(model="openai/gpt-oss-120b", temperature=0.2)
+groq_key = os.getenv("GROQ_API_KEY", "").strip("'\" \t\r\n")
+llm = ChatGroq(
+    model="openai/gpt-oss-120b",
+    temperature=0.2,
+    api_key=groq_key if groq_key else None,
+)
 
 
 class RouteDecision(BaseModel):
-    route: Literal["chat", "rag", "summarize"] = Field(
+    route: Literal["chat", "rag", "summarize", "research"] = Field(
         description=(
-            "Choose 'chat' for greetings, small talk, or general questions. "
-            "Choose 'rag' for specific questions about facts, details, or topics in the video. "
-            "Choose 'summarize' for summary, TL;DR, overview, or key takeaways."
+            "Choose 'chat' for greetings, casual small talk, or meta-questions. "
+            "Choose 'summarize' for summary, TL;DR, overview, or key takeaways of the video. "
+            "Choose 'research' when the user asks how to build, implement, code, or plan a project idea "
+            "or technical concept mentioned in the video, or asks for external technical research/live search. "
+            "Choose 'rag' for specific questions about facts, quotes, timestamps, or content directly covered in the video transcript."
         )
     )
 
@@ -155,15 +179,8 @@ class GraphState(TypedDict):
 # ── Nodes ────────────────────────────────────────────────────────────
 def router_node(state: GraphState):
     user_last_msg = state["messages"][-1].content
-    system_prompt = (
-        "You are an intelligent intent router for a YouTube Video Assistant.\n"
-        "Analyze the user's latest input and decide which node should handle it:\n"
-        "1. 'chat': Greetings, casual conversation, thanking the bot, or meta-questions.\n"
-        "2. 'rag': Specific questions about facts, details, timestamps, or topics in the video.\n"
-        "3. 'summarize': Requests to summarize the video, list key takeaways, or give an overview."
-    )
     decision = router_llm.invoke(
-        [SystemMessage(content=system_prompt), HumanMessage(content=user_last_msg)]
+        [SystemMessage(content=ROUTER_SYSTEM_PROMPT), HumanMessage(content=user_last_msg)]
     )
     return {"route": decision.route}
 
@@ -172,13 +189,7 @@ def chat_node(state: GraphState):
     video_preview = state["transcript"][:800]
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are a friendly, sharp YouTube AI assistant. Handle greetings, casual chat, "
-                "and follow-up conversation naturally. You have access to our full conversation "
-                "history below.\nFor context, here is a preview of the loaded video transcript "
-                "so you know the general topic:\n{video_preview}...",
-            ),
+            ("system", CHAT_SYSTEM_PROMPT),
             MessagesPlaceholder(variable_name="messages"),
         ]
     )
@@ -186,7 +197,7 @@ def chat_node(state: GraphState):
     response = chain.invoke(
         {"video_preview": video_preview, "messages": state["messages"]}
     )
-    return {"messages": [response]}
+    return {"messages": [response], "route": "chat"}
 
 
 def rag_node(state: GraphState):
@@ -203,14 +214,7 @@ def rag_node(state: GraphState):
 
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are an expert YouTube RAG assistant. Answer the user's question "
-                "accurately using ONLY the provided transcript context and our conversation "
-                "history. Whenever timestamps like [MM:SS] are present in the context, cite "
-                "them in your answer! If the answer is not in the transcript, say so honestly."
-                "\n\nRetrieved Transcript Chunks:\n{context}",
-            ),
+            ("system", RAG_SYSTEM_PROMPT),
             MessagesPlaceholder(variable_name="messages"),
         ]
     )
@@ -218,22 +222,14 @@ def rag_node(state: GraphState):
     response = chain.invoke(
         {"context": context_text, "messages": state["messages"]}
     )
-    return {"messages": [response]}
+    return {"messages": [response], "route": "rag"}
 
 
 def summarizer_node(state: GraphState):
     transcript_for_summary = state["transcript"][:25000]
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                "You are an expert video summarizer. Based on the video transcript below, "
-                "fulfill the user's summary request. Structure your response with:\n"
-                "1. **Core Theme** (1-2 sentences)\n"
-                "2. **Key Takeaways & Timestamps** (Bullet points with [MM:SS] timestamps)\n"
-                "3. **Conclusion / Actionable Insight**\n\n"
-                "Video Transcript:\n{transcript}",
-            ),
+            ("system", SUMMARIZER_SYSTEM_PROMPT),
             MessagesPlaceholder(variable_name="messages"),
         ]
     )
@@ -241,16 +237,63 @@ def summarizer_node(state: GraphState):
     response = chain.invoke(
         {"transcript": transcript_for_summary, "messages": state["messages"]}
     )
-    return {"messages": [response]}
+    return {"messages": [response], "route": "summarize"}
+
+
+def research_node(state: GraphState):
+    """
+    Deep research node that combines retrieved video chunks with
+    targeted Tavily internet search to explain project ideas, build plans,
+    and architecture without refusing or deflecting.
+    """
+    user_question = state["messages"][-1].content
+    video_id = state.get("video_id", "default")
+
+    # 1. Retrieve grounded video chunks from FAISS
+    if video_id in _vector_store_cache:
+        _, retriever = _vector_store_cache[video_id]
+    else:
+        _, retriever = build_vector_store(state["transcript"], video_id)
+
+    retrieved_docs = retriever.invoke(user_question)
+    video_context = "\n\n---\n\n".join(doc.page_content for doc in retrieved_docs)
+
+    # 2. Intelligent Tavily web search (only if configured in .env, never crashes if empty)
+    web_context = ""
+    if is_tavily_configured():
+        search_query = generate_search_query(llm, user_question)
+        search_results = search_tavily(search_query, max_results=4)
+        web_context = format_web_context(search_results, query_used=search_query)
+    else:
+        web_context = format_web_context([], query_used=None)
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", RESEARCH_SYSTEM_PROMPT),
+            MessagesPlaceholder(variable_name="messages"),
+        ]
+    )
+    chain = prompt | llm
+    response = chain.invoke(
+        {
+            "video_context": video_context,
+            "web_context": web_context,
+            "messages": state["messages"],
+        }
+    )
+    return {"messages": [response], "route": "research"}
 
 
 def select_next_node(
     state: GraphState,
-) -> Literal["chat_node", "rag_node", "summarizer_node"]:
-    if state["route"] == "chat":
+) -> Literal["chat_node", "rag_node", "summarizer_node", "research_node"]:
+    route = state.get("route", "rag")
+    if route == "chat":
         return "chat_node"
-    elif state["route"] == "summarize":
+    elif route == "summarize":
         return "summarizer_node"
+    elif route == "research":
+        return "research_node"
     return "rag_node"
 
 
@@ -262,6 +305,7 @@ def _build_graph():
     builder.add_node("chat_node", chat_node)
     builder.add_node("rag_node", rag_node)
     builder.add_node("summarizer_node", summarizer_node)
+    builder.add_node("research_node", research_node)
 
     builder.add_edge(START, "router_node")
     builder.add_conditional_edges(
@@ -271,13 +315,121 @@ def _build_graph():
             "chat_node": "chat_node",
             "rag_node": "rag_node",
             "summarizer_node": "summarizer_node",
+            "research_node": "research_node",
         },
     )
     builder.add_edge("chat_node", END)
     builder.add_edge("rag_node", END)
     builder.add_edge("summarizer_node", END)
+    builder.add_edge("research_node", END)
 
     return builder.compile()
 
 
 graph = _build_graph()
+
+
+# ── Streaming Generator ──────────────────────────────────────────────
+async def stream_chat_response(messages: list, transcript: str, video_id: str):
+    """
+    Stream AI responses token-by-token for real-time frontend playback.
+    Yields dicts:
+      - {"type": "route", "route": route}
+      - {"type": "delta", "content": chunk_text}
+    """
+    user_last_msg = messages[-1].content
+
+    # 1. Routing decision
+    decision = await router_llm.ainvoke(
+        [SystemMessage(content=ROUTER_SYSTEM_PROMPT), HumanMessage(content=user_last_msg)]
+    )
+    route = decision.route
+    yield {"type": "route", "route": route}
+
+    # 2. Stream according to selected route
+    if route == "chat":
+        video_preview = transcript[:800]
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", CHAT_SYSTEM_PROMPT),
+                MessagesPlaceholder(variable_name="messages"),
+            ]
+        )
+        chain = prompt | llm
+        async for chunk in chain.astream(
+            {"video_preview": video_preview, "messages": messages}
+        ):
+            if chunk.content:
+                yield {"type": "delta", "content": chunk.content}
+
+    elif route == "summarize":
+        transcript_for_summary = transcript[:25000]
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", SUMMARIZER_SYSTEM_PROMPT),
+                MessagesPlaceholder(variable_name="messages"),
+            ]
+        )
+        chain = prompt | llm
+        async for chunk in chain.astream(
+            {"transcript": transcript_for_summary, "messages": messages}
+        ):
+            if chunk.content:
+                yield {"type": "delta", "content": chunk.content}
+
+    elif route == "research":
+        if video_id in _vector_store_cache:
+            _, retriever = _vector_store_cache[video_id]
+        else:
+            _, retriever = await asyncio.to_thread(build_vector_store, transcript, video_id)
+
+        retrieved_docs = await asyncio.to_thread(retriever.invoke, user_last_msg)
+        video_context = "\n\n---\n\n".join(doc.page_content for doc in retrieved_docs)
+
+        web_context = ""
+        if is_tavily_configured():
+            search_query = await asyncio.to_thread(generate_search_query, llm, user_last_msg)
+            search_results = await asyncio.to_thread(search_tavily, search_query, 4)
+            web_context = format_web_context(search_results, query_used=search_query)
+        else:
+            web_context = format_web_context([], query_used=None)
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", RESEARCH_SYSTEM_PROMPT),
+                MessagesPlaceholder(variable_name="messages"),
+            ]
+        )
+        chain = prompt | llm
+        async for chunk in chain.astream(
+            {
+                "video_context": video_context,
+                "web_context": web_context,
+                "messages": messages,
+            }
+        ):
+            if chunk.content:
+                yield {"type": "delta", "content": chunk.content}
+
+    else:  # 'rag'
+        if video_id in _vector_store_cache:
+            _, retriever = _vector_store_cache[video_id]
+        else:
+            _, retriever = await asyncio.to_thread(build_vector_store, transcript, video_id)
+
+        retrieved_docs = await asyncio.to_thread(retriever.invoke, user_last_msg)
+        context_text = "\n\n---\n\n".join(doc.page_content for doc in retrieved_docs)
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", RAG_SYSTEM_PROMPT),
+                MessagesPlaceholder(variable_name="messages"),
+            ]
+        )
+        chain = prompt | llm
+        async for chunk in chain.astream(
+            {"context": context_text, "messages": messages}
+        ):
+            if chunk.content:
+                yield {"type": "delta", "content": chunk.content}
+
