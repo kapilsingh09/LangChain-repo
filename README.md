@@ -1,117 +1,166 @@
 # LangGraph & LLM Projects Workspace
 
-This folder is a collection of experiments, demos, and mini-projects built around LangChain, LangGraph, Retrieval-Augmented Generation (RAG), multi-agent systems, and AI-powered applications.
+This repository is a collection of experiments, tutorials, demos, and mini-projects built around LangChain, LangGraph, Retrieval-Augmented Generation (RAG), multi-agent systems, and AI-powered applications.
 
-The workspace contains both learning materials and end-to-end application prototypes, ranging from notebook-based tutorials to full web apps and research agents.
+It covers a range of implementations, from notebook-based learning experiments to end-to-end AI application prototypes.
 
 ## Overview
 
 The projects in this workspace explore:
 
-- LangGraph agent orchestration and workflows
-- Multi-agent collaboration patterns
-- Retrieval-augmented generation (RAG)
-- YouTube and document-based Q&A systems
-- AI research and report generation
-- FastAPI and frontend integrations
+- LangGraph agent orchestration and workflow design
+- Multi-agent collaboration and coordination patterns
+- Retrieval-Augmented Generation (RAG) architectures
+- YouTube and document-based question-answering systems
+- AI-powered research and report generation
+- FastAPI backend development and frontend integrations
 - Notebook-based experimentation and tutorials
+- LLM-powered tools and autonomous agents
 
 ## Project Structure
 
 ```text
 langgraph/
 ├── MA-chatbot/                # Multi-agent chatbot project
-├── MultiagentLG/              # Deep research / multi-agent research API
-├── RAG-YT-EXT/                # YouTube RAG extension project
+├── MultiagentLG/              # Deep research and multi-agent research API
+├── RAG-YT-EXT/                # YouTube RAG Chrome extension
 ├── corrective-rag/            # Corrective RAG experiments
-├── document-copilot/         # Document AI assistant
-├── documents/                # Shared/supporting documents
-├── graph+rag_ad/             # Graph + RAG experiments
-├── langchain/                # LangChain-related learning and project files
-├── langgraph/                # LangGraph tutorials, notebooks, examples
-├── langgraph_ragchatbot_yt/  # LangGraph YouTube chatbot project
-├── self-rag/                 # Self-RAG experiments
-├── stitch-export/            # Stitch-based export/demo assets
-├── web-app/                  # General web app experiments
-├── yt-info-extracter/        # YouTube info extraction utilities
-├── one.ipynb                # Notebook exercise / exploration
-├── test.py                  # Small test scripts or experiments
-├── .gitignore               # Git ignore rules
-├── README.md                # Project overview
-└── .vscode/                 # Editor settings
+├── document-copilot/          # Document-based AI assistant
+├── documents/                 # Shared and supporting documents
+├── graph+rag_ad/              # Graph + RAG experiments
+├── langchain/                 # LangChain tutorials and projects
+├── langgraph/                 # LangGraph tutorials and examples
+├── langgraph_ragchatbot_yt/   # LangGraph-based YouTube chatbot
+├── self-rag/                  # Self-RAG experiments
+├── stitch-export/             # Stitch-based design exports and assets
+├── web-app/                   # Web application experiments
+├── yt-info-extracter/         # YouTube information extraction utilities
+├── one.ipynb                  # Notebook experiments
+├── test.py                    # Testing and experimentation scripts
+├── .gitignore                 # Git ignore configuration
+├── README.md                  # Workspace documentation
+└── .vscode/                   # VS Code settings
 ```
 
-## Notable folders
+## Notable Projects
 
-### MultiagentLG
-A LangGraph-based deep research system using multiple AI agents to break down a question, research it, critique findings, and generate a final report.
+### 1. MultiagentLG
 
-### MA-chatbot
-A multi-agent conversational project focused on chatbot orchestration and interaction flows.
+A LangGraph-based deep research system that uses multiple AI agents to break down complex queries, gather information, evaluate findings, and generate structured research reports.
 
-### RAG-YT-EXT
-A YouTube-focused retrieval and answer system that combines RAG patterns with YouTube content extraction or indexing.
+### 2. MA-chatbot
 
-### document-copilot
-A document-driven AI assistant for reading, understanding, and querying document content.
+A multi-agent conversational application focused on agent orchestration, task coordination, and chatbot interaction workflows.
 
-### langgraph
-A learning-focused area containing LangGraph tutorials, notebooks, and examples.
+### 3. RAG-YT-EXT
 
-### langchain
-A LangChain-centric workspace containing projects and utilities related to chaining, memory, retrieval, and tooling.
+A YouTube-focused AI research assistant that uses video transcripts and retrieval-based techniques to answer questions about YouTube content.
 
-### graph+rag_ad and self-rag
-Experimental RAG and graph-based architectures that extend the ideas of retrieval, reasoning, and adaptive generation.
+### 4. document-copilot
 
-## Typical Tech Stack
+A document-driven AI assistant designed to process, understand, and answer questions from uploaded documents.
 
-Most projects in this workspace use a combination of:
+### 5. langgraph
 
-- Python
-- LangChain
-- LangGraph
-- FastAPI
-- RAG pipelines
-- Vector stores / embedding workflows
-- LLM APIs (OpenAI, Gemini, Groq, Hugging Face, etc.)
-- JavaScript/React for frontends in selected projects
+A learning-focused directory containing LangGraph tutorials, notebooks, graph architectures, and practical examples.
+
+### 6. langchain
+
+A collection of LangChain-related experiments covering chains, tools, memory, retrieval, and LLM integrations.
+
+### 7. graph+rag_ad and self-rag
+
+Experimental implementations exploring graph-based retrieval, adaptive retrieval strategies, and self-reflective RAG architectures.
+
+### 8. corrective-rag
+
+Experiments with Corrective RAG (CRAG), focusing on retrieval evaluation and improving answer quality through corrective retrieval strategies.
+
+## Tech Stack
+
+The workspace primarily uses the following technologies:
+
+- **Programming:** Python, JavaScript
+- **LLM Frameworks:** LangChain, LangGraph
+- **Backend:** FastAPI
+- **AI Architectures:** RAG, Agentic RAG, Multi-Agent Systems
+- **Vector Search:** FAISS and other vector store integrations
+- **Embeddings:** Hugging Face embedding models and API-based embedding models
+- **LLM Providers:** OpenAI, Google Gemini, Groq, Hugging Face
+- **Frontend:** JavaScript, React
+- **Development:** Jupyter Notebook, VS Code, Git
 
 ## Getting Started
 
-1. Open the project folder that matches your use case.
-2. Read that project's own README for specific setup instructions.
-3. Create or activate a Python virtual environment.
-4. Install dependencies for the chosen project.
-5. Add required API keys in a `.env` file when needed.
+Follow these steps to run an individual project:
 
-Example:
+### 1. Clone the repository
+
+```bash
+git clone <repository-url>
+cd langgraph
+```
+
+### 2. Navigate to the desired project
 
 ```bash
 cd MultiagentLG
+```
+
+### 3. Create a virtual environment
+
+```bash
 python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# or .venv\Scripts\activate  # Windows
+```
+
+### 4. Activate the environment
+
+```bash
+# Windows
+.venv\Scripts\activate
+
+# Linux/macOS
+source .venv/bin/activate
+```
+
+### 5. Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-## Recommended workflow
+### 6. Configure environment variables
 
-- For learning: start with the `langgraph/` and `langchain/` folders.
-- For agent systems: review `MultiagentLG` and `MA-chatbot`.
-- For RAG experiments: check `RAG-YT-EXT`, `document-copilot`, `corrective-rag`, and `self-rag`.
-- For app prototypes: inspect `web-app` and the individual frontend folders.
+Create a `.env` file and add the API keys required by the selected project.
+
+```env
+GROQ_API_KEY=your_api_key
+GOOGLE_API_KEY=your_api_key
+TAVILY_API_KEY=your_api_key
+```
+
+Refer to the individual project's README for its specific dependencies and configuration requirements.
+
+## Recommended Workflow
+
+- **Learning LangChain and LangGraph:** Explore the `langchain/` and `langgraph/` directories.
+- **Building agentic systems:** Explore `MultiagentLG/` and `MA-chatbot/`.
+- **Exploring RAG architectures:** Explore `RAG-YT-EXT/`, `document-copilot/`, `corrective-rag/`, and `self-rag/`.
+- **Experimenting with advanced retrieval:** Explore `graph+rag_ad/`.
+- **Building AI-powered applications:** Explore `web-app/` and individual project frontend directories.
+
+## Project Guidelines
+
+- Each project may have its own dependencies and environment configuration.
+- Check the individual README before running a project.
+- Keep API keys and credentials inside environment variables.
+- Some directories contain experiments and learning implementations rather than complete applications.
+- The workspace is continuously evolving as new experiments and implementations are added.
 
 ## Maintainer
 
-This workspace is maintained by kapil Singh.
-
-## Notes
-
-This repository is best understood as a research and experimentation workspace rather than a single production app. Some folders are self-contained projects, while others are tutorial examples or prototype experiments.
-
-If you want to work on one project, it is usually better to open that specific subdirectory instead of the root folder.
+**Kapil Singh**
 
 ## License
 
-This project collection does not appear to be governed by a single root-level license file. Individual subprojects may carry their own licensing terms, so check the relevant folder before redistribution or commercial use.
+This workspace does not currently have a single root-level license governing all projects. Individual subprojects may have their own licensing terms. Check the relevant project directory before using or redistributing its contents.
