@@ -20,7 +20,7 @@ The projects in this workspace explore:
 ## Project Structure
 
 ```text
-langgraph/
+LangChain-repo/
 ├── MA-chatbot/                # Multi-agent chatbot project
 ├── MultiagentLG/              # Deep research and multi-agent research API
 ├── RAG-YT-EXT/                # YouTube RAG Chrome extension
@@ -76,6 +76,10 @@ Experimental implementations exploring graph-based retrieval, adaptive retrieval
 
 Experiments with Corrective RAG (CRAG), focusing on retrieval evaluation and improving answer quality through corrective retrieval strategies.
 
+### 9. Embedding experiments
+
+The root-level `one.ipynb` and `graph+rag_ad/main_one.ipynb` notebooks demonstrate local embedding setup with `BAAI/bge-small-en-v1.5` through `sentence-transformers`.
+
 ## Tech Stack
 
 The workspace primarily uses the following technologies:
@@ -97,8 +101,8 @@ Follow these steps to run an individual project:
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
-cd langgraph
+git clone https://github.com/kapilsingh09/LangChain-repo.git
+cd LangChain-repo
 ```
 
 ### 2. Navigate to the desired project
@@ -129,6 +133,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+For the notebook-based experiments, install Jupyter and the embedding dependencies:
+
+```bash
+pip install jupyter sentence-transformers
+```
+
 ### 6. Configure environment variables
 
 Create a `.env` file and add the API keys required by the selected project.
@@ -137,9 +147,18 @@ Create a `.env` file and add the API keys required by the selected project.
 GROQ_API_KEY=your_api_key
 GOOGLE_API_KEY=your_api_key
 TAVILY_API_KEY=your_api_key
+HF_TOKEN=your_hugging_face_token
 ```
 
 Refer to the individual project's README for its specific dependencies and configuration requirements.
+
+### 7. Run a notebook
+
+```bash
+jupyter notebook one.ipynb
+```
+
+The Hugging Face token is optional for public models, but setting `HF_TOKEN` can increase download rate limits.
 
 ## Recommended Workflow
 
