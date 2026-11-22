@@ -4,6 +4,13 @@ This repository is a collection of experiments, tutorials, demos, and mini-proje
 
 It covers a range of implementations, from notebook-based learning experiments to end-to-end AI application prototypes.
 
+## Workspace Highlights
+
+- Hands-on notebooks for learning LangChain, LangGraph, embeddings, and retrieval techniques
+- Runnable examples of autonomous agents and multi-agent research workflows
+- RAG experiments ranging from basic document retrieval to corrective and graph-enhanced approaches
+- Full-stack AI prototypes with Python backends and modern frontend applications
+
 ## Overview
 
 The projects in this workspace explore:
